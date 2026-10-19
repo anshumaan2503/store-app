@@ -1,0 +1,130 @@
+import {
+  OnGatewayConnection,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { AuthService } from './auth.service.js';
+import { JwtService } from '@nestjs/jwt';
+import { CurrentUser } from '../decorators/user.decorator.js';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard.js';
+
+// @UseGuards(JwtAuthGuard)
+@WebSocketGateway({ cors: { origin: '*', allowedHeaders: ['*'], credentials: true } })
+export class AuthGateway {
+  @WebSocketServer() server: any;
+  constructor(
+    private readonly auth: AuthService,
+    private readonly jwt: JwtService,
+  ) {}
+
+  @UseGuards(JwtAuthGuard)
+  async me(@CurrentUser() user?: { userId: string }) {
+    return { ok: true, userId: user?.userId };
+  }
+
+  async broadcastAuthList() {
+    var body = { page: 1, limit: 12, sort: '-createdAt', q: '', field: 'all' };
+    var authUserList = await this.auth.findUserPaged(body);
+    this.server.emit('auth:listUsersPaged', authUserList);
+  }
+
+  async broadcastUserUpdate(userId: string) {
+    try {
+      const user = await this.auth.findOneUsers(userId);
+      this.server.emit('auth:findOne', user);
+    } catch {}
+  }
+
+  @SubscribeMessage('auth:connection')
+  async handleConnect(client: any, payload: any): Promise<string> {
+    var id: string = payload.id;
+    if (id.length > 0) {
+      var user = await this.auth.findByIdUsers(id);
+
+      console.log(`User connected ${user!.name} ${client.id}`);
+
+      // try {
+      //   // Send the notification
+      //   const fcmResponse = await this.mobileNotificationService.sendNotificationToSingleDevice(
+      //     user.fcmToken,
+      //     {
+      //       title: 'demo title',
+      //       body: 'this is the body of the notification',
+      //     },
+      //   );
+
+      //   console.log('FCM Response:', fcmResponse);
+      //   // Handle response or return it if needed
+      //   return fcmResponse;
+      // } catch (error) {
+      //   console.error('Error sending notification:', error);
+      //   // Handle error appropriately
+      //   throw error;
+      // }
+
+      // var fcmresponse =
+      //   await this.mobileNotificationService.sendNotificationToSingleDevice(
+      //     user.fcmToken,
+      //     {
+      //       title: 'demo title',
+      //       body: 'this is the body of the notification',
+      //     },
+      //   );
+
+      // console.log('FCM : ' + fcmresponse);
+
+      client.emit('auth:connection', user);
+    }
+    console.log(this.server.engine.clientsCount);
+
+    return 'Hello world!';
+  }
+
+  @SubscribeMessage('auth:disconnect')
+  async disconnectMessage(client: any, payload: any): Promise<string> {
+    console.log('Logged disconnect');
+
+    var id: string = payload.id;
+    var user = await this.auth.findByIdUsers(id);
+    console.log(`User disconnected ${user!.name}`);
+    return 'Hello world!';
+  }
+
+  @SubscribeMessage('auth:findAll')
+  async findAll(client: any, payload: any) {
+    var authUserList = await this.auth.findAllUsers();
+
+    client.emit('auth:findAll', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('auth:listUsersPaged')
+  async listUsersPaged(client: any, body: any) {
+    var authUserList = await this.auth.findUserPaged(body);
+    client.emit('auth:listUsersPaged', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('auth:findOne')
+  async findOne(client: any, payload: any) {
+    var authUserList = await this.auth.findOneUsers(payload.id);
+    client.emit('auth:findOne', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('auth:findOneFetch')
+  async findOneFetch(client: any, payload: any) {
+    var authUserList = await this.auth.findOneUsers(payload.id);
+    client.emit('auth:findOneFetch', authUserList);
+    return;
+  }
+
+  @SubscribeMessage('division:findAll')
+  async findDivision(client: any, payload: any) {
+    var division = await this.auth.findDivision();
+    client.emit('division:findAll', division);
+    return;
+  }
+}

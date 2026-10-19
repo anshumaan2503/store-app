@@ -1,0 +1,33 @@
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { AppModule } from './app.module.js';
+import { json, urlencoded } from 'express';
+import * as express from 'express';
+import { join } from 'path';
+import EventEmitter from 'events';
+
+
+EventEmitter.defaultMaxListeners = 2000;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  // ⬇️ Allow large JSON / form bodies (50 MB)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ limit: '50mb', extended: true }));
+
+  app.enableCors({
+    origin: '*', // Replace with specific origins if needed
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Include all allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Add any required headers
+    credentials: true, // If you need to send cookies or credentials
+    exposedHeaders: [], // If you need to expose specific headers
+    maxAge: 12 * 60 * 60, // 12 hours in seconds
+  });
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.use('/public', express.static(join(__dirname, '..', 'public')));
+  await app.listen(process.env.PORT ?? 80);
+
+  console.log(`API on http://localhost:${process.env.PORT || 8080}`);
+}
+
+bootstrap();

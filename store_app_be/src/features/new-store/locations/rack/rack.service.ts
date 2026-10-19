@@ -1,0 +1,940 @@
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Connection, Model, SortOrder, Types } from 'mongoose';
+import { CreateRackDto } from './dto/create-rack.dto';
+import { UpdateRackDto } from './dto/update-rack.dto';
+import { Rack, RackDocument } from './entities/rack.schema';
+import { RoomsService } from '../room/room.service';
+import { CounterService } from '../../common/code-gen.service';
+import {
+  StockTrack,
+  StockTrackDocument,
+  StockTrackType,
+} from '../../store-items/store-item/entities/stock-track.schema';
+import {
+  ItemRackQty,
+  ItemRackQtyDocument,
+} from './entities/item-rack-qty.schema';
+import { StoreNewItem } from '../../store-items/store-item/entities/store-item.schema';
+
+type RackQueryDto = {
+  page: number;
+  limit: number;
+  search: string;
+  sort: string;
+  roomId?: string;
+  allowItemId?: string;
+};
+
+@Injectable()
+export class RacksService {
+  constructor(
+    @InjectModel(Rack.name, 'store')
+    private readonly model: Model<RackDocument>,
+
+    // ✅ NEW
+    @InjectModel(StockTrack.name, 'store')
+    private readonly trackModel: Model<StockTrackDocument>,
+
+    @InjectModel(StoreNewItem.name, 'store')
+    private readonly itemModel: Model<StoreNewItem>,
+    // ✅ NEW
+    @InjectConnection('store')
+    private readonly conn: Connection,
+
+    @InjectModel(ItemRackQty.name, 'store')
+    private readonly ItemRackQtyModel: Model<ItemRackQtyDocument>,
+
+    private readonly counterService: CounterService,
+    private readonly rooms: RoomsService,
+  ) {}
+
+  private oid(id: string) {
+    return new Types.ObjectId(id);
+  }
+
+  private oidOrNull(id?: string | null) {
+    const v = (id ?? '').trim();
+    return v && Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : null;
+  }
+
+  private sortObj(sort?: string): Record<string, SortOrder> {
+    const s = (sort ?? '-createdAt').trim();
+    const dir: SortOrder = s.startsWith('-') ? -1 : 1;
+    const field = s.replace(/^-/, '') || 'createdAt';
+    return { [field]: dir } as Record<string, SortOrder>;
+  }
+
+  // ✅ NEW: safe operator id extraction (won’t break DTO typings)
+  private getOperatorId(dtoLike: any): Types.ObjectId | null {
+    const v = String(dtoLike?.updatedBy ?? dtoLike?.createdBy ?? '').trim();
+    return v && Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : null;
+  }
+
+  // ✅ NEW: write track (qty = 0 for rack-only ops)
+  private async writeTrack(input: {
+    operatedBy: Types.ObjectId;
+    type: StockTrackType;
+    qty?: number;
+    refNo?: string;
+    note?: string;
+    itemId?: Types.ObjectId | null;
+    rackId?: Types.ObjectId | null;
+  }) {
+    await this.trackModel.create({
+      operatedBy: input.operatedBy,
+      type: input.type,
+      qty: Number(input.qty ?? 0),
+      refNo: input.refNo ?? '',
+      note: input.note ?? '',
+      itemId: input.itemId ?? null,
+      rackId: input.rackId ?? null,
+      categoryId: null,
+      receivingId: null,
+      issueId: null,
+    });
+  }
+
+  /* -------------------- WS READS -------------------- */
+
+  async findRealAllRackPaged() {
+    // const page = Math.max(1, Number(q.page || 1));
+    // const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    // const skip = (page - 1) * limit;
+    var rowsQtyData: any = [];
+    var rows = await this.model.find().lean();
+    for (var data of rows) {
+      var rowsQyt = await this.ItemRackQtyModel.findOne({
+        itemId: data.itemId,
+        rackId: data._id,
+      }).lean();
+
+      rowsQtyData.push({
+        _id: data._id,
+        code: data.code,
+        rackName: data.rackName ?? '',
+        remark: data.remark,
+        roomId: data.roomId,
+        itemId: data.itemId,
+        // itemName: data.itemName == '' ? 'Not Assign' : data.itemName,
+        isScrap: data.isScrap,
+        roomName: data.roomName,
+        createdBy: data.createdBy,
+        totalStockQuantity: rowsQyt?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: rowsQyt?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: rowsQyt?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: rowsQyt?.stockscrapQuantity ?? 0,
+      });
+    }
+
+    // console.log(rowsQtyData);
+    return rowsQtyData;
+  }
+
+  async findAllPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: false,
+      isScrap: false,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: false,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        { rackName: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = false;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: false,
+      isScrap: true,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: true,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        { rackName: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllGoodMachineRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: true,
+      isScrap: false,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: false,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        { rackName: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findAllScrapMachineRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const search = (q.search || '').trim();
+    const rooms = await this.rooms.findFiltter({
+      isOneRack: true,
+      isScrap: true,
+    }); // add isScrap: false if required
+    const allowedRoomIds = rooms.map((r) => String(r._id));
+
+    const filter: any = {
+      isScrap: true,
+      roomId: { $in: allowedRoomIds },
+    };
+
+    if (q.roomId) filter.roomId = q.roomId;
+
+    if (search) {
+      filter.$or = [
+        { rackName: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { remark: { $regex: search, $options: 'i' } },
+        { roomName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // filter.isScrap = true;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findNotOccupiedRackPaged(q: RackQueryDto) {
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+
+    const roomOid = this.oidOrNull(q.roomId);
+    if (roomOid) filter.roomId = roomOid;
+
+    const search = (q.search || '').trim();
+    if (search) {
+      filter.$or = [
+        // { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const allowOid = this.oidOrNull(q.allowItemId);
+
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      $or: [
+        // { isOccupied: false },
+        { itemId: [] },
+        { itemId: null },
+        { itemId: { $exists: false } },
+        ...(allowOid ? [{ itemId: allowOid }] : []),
+      ],
+    });
+    filter.isScrap = false;
+    const [rows, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(this.sortObj(q.sort || 'name'))
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+
+    return { rows, total, page, limit };
+  }
+
+  async findOne(id: string) {
+    const doc = await this.model.findById(id).lean();
+    if (!doc) throw new NotFoundException('Rack not found');
+    return doc;
+  }
+
+  async findRackByRoom(roomId: string, itemId: string) {
+    const filter: any = {
+      roomId,
+      isActive: false,
+    };
+
+    if (itemId && itemId.trim() !== '') {
+      // If itemId in DB is ObjectId, convert it
+      filter.itemId = { $ne: itemId };
+    }
+
+    const doc = await this.model.find(filter).lean();
+
+    // Optional: throw if empty
+    // if (doc.length === 0) throw new NotFoundException("Rack not found");
+
+    return doc;
+  }
+
+  async findRackByItem(itemId: string) {
+    var rackWithStock: any = [];
+
+    const item: any = await this.itemModel.findById(itemId).lean();
+    const itemRackIds = Array.isArray(item?.rackId)
+      ? item.rackId.filter((id) => Boolean(id) && Types.ObjectId.isValid(id))
+      : [];
+
+    const doc = await this.model
+      .find({
+        $or: [
+          { itemId: { $in: [itemId] } },
+          ...(itemRackIds.length > 0
+            ? [{ _id: { $in: itemRackIds.map((id) => new Types.ObjectId(id)) } }]
+            : []),
+        ],
+        isActive: false,
+      })
+      .lean();
+    if (!doc || doc.length === 0) return [];
+
+    for (var rk of doc) {
+      var stock = await this.ItemRackQtyModel.findOne({
+        rackId: rk._id.toString(),
+        itemId: itemId,
+      });
+
+      let roomName = rk.roomName;
+      if ((!roomName || String(roomName).trim() === '') && rk.roomId) {
+        try {
+          const rm = await this.rooms.findOne(rk.roomId);
+          roomName = rm?.roomName ? `${rm.roomName} (${rm.code})` : (rm?.code ?? '');
+        } catch (_) {}
+      }
+
+      rackWithStock.push({
+        _id: rk._id.toString(),
+        code: rk.code,
+        rackName: rk.rackName ?? '',
+        remark: rk.remark,
+        roomId: rk.roomId,
+        itemId: rk.itemId,
+        isScrap: rk.isScrap,
+        roomName: roomName ?? '',
+        createdBy: rk.createdBy,
+        totalStockQuantity: stock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: stock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: stock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: stock?.stockscrapQuantity ?? 0,
+      });
+    }
+
+    return rackWithStock;
+  }
+
+  async findRackByItemNonZero(itemId: string) {
+    var item: any = await this.itemModel.findById(itemId);
+    if (!item) {
+      throw new NotFoundException('item not found');
+    }
+
+    const itemRackIds = Array.isArray(item?.rackId)
+      ? item.rackId.filter((id) => Boolean(id) && Types.ObjectId.isValid(id))
+      : [];
+
+    // 1) Racks mapped with this item (if your Rack model contains itemId or item has rackId)
+    const links = await this.model
+      .find({
+        $or: [
+          { itemId: { $in: [itemId] } },
+          ...(itemRackIds.length > 0
+            ? [{ _id: { $in: itemRackIds.map((id) => new Types.ObjectId(id)) } }]
+            : []),
+        ],
+        isActive: false,
+      })
+      .select('_id')
+      .lean();
+
+    if (!links || links.length === 0) {
+      return [];
+    }
+
+    const rackIds = links.map((x) => x._id);
+
+    // 2) Get stock docs only where stockAvailableQuantity > 0
+    const racksWithStock = await this.ItemRackQtyModel.find({
+      itemId,
+      rackId: { $in: rackIds },
+      stockAvailableQuantity: { $gt: 0 },
+    })
+      .select('rackId stockAvailableQuantity')
+      .lean();
+
+    if (!racksWithStock || racksWithStock.length === 0) {
+      // Optional: if you want to throw when no rack has stock
+      return [];
+      // or: throw new NotFoundException('No rack has available stock for this item');
+    }
+
+    // Build a quick lookup: rackId -> stockAvailableQuantity
+    const qtyByRackId = new Map<string, number>();
+    for (const s of racksWithStock) {
+      qtyByRackId.set(String(s.rackId), Number(s.stockAvailableQuantity ?? 0));
+    }
+
+    // Dedup rackIds from stock docs
+    const rackIdWithStock = Array.from(qtyByRackId.keys());
+
+    // 3) Fetch rack details
+    const racks = await this.model
+      .find({ _id: { $in: rackIdWithStock }, isActive: false })
+      .lean();
+
+    // 4) Attach stock to rack response
+    const rackWithStocks = racks.map((rack) => ({
+      _id: rack._id,
+      code: rack.code,
+      // name: rack.name,
+      remark: rack.remark,
+      roomId: rack.roomId,
+      itemId: rack.itemId,
+      itemName: item.itemName,
+      isScrap: rack.isScrap,
+      roomName: rack.roomName,
+      createdBy: rack.createdBy,
+      stockAvailableQuantity: qtyByRackId.get(String(rack._id)) ?? 0,
+    }));
+
+    return rackWithStocks;
+  }
+
+  async findRackStock(rackId: string) {
+    // 1) Racks mapped with this item (if your Rack model contains itemId)
+    var links = await this.model.findById(rackId).lean();
+
+    if (!links) {
+      throw new NotFoundException('Rack not found');
+    }
+    var itemlist: any = [];
+    // const rackIds = links.map((x) => x._id);
+    for (var it of links.itemId) {
+      var item: any = await this.itemModel.findById(it);
+      if (!item) {
+        continue;
+      }
+
+      const racksWithStock = await this.ItemRackQtyModel.findOne({
+        itemId: it,
+        rackId: rackId,
+      }).lean();
+
+      itemlist.push({
+        itemId: item?._id.toString(),
+        itemCode: item?.itemCode.toString(),
+        itemName: item?.itemName.toString(),
+        totalStockQuantity: racksWithStock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: racksWithStock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: racksWithStock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: racksWithStock?.stockscrapQuantity ?? 0,
+      });
+    }
+
+    const rackWithStocks = {
+      _id: links._id,
+      code: links.code,
+      remark: links.remark,
+      roomId: links.roomId,
+      itemId: links.itemId,
+      isScrap: links.isScrap,
+      roomName: links.roomName,
+      createdBy: links.createdBy,
+      itemlist,
+    };
+
+    return rackWithStocks;
+  }
+
+  async findRackStockByItem(rackId: string, itemId: string) {
+    // 1) Racks mapped with this item (if your Rack model contains itemId)
+    var links = await this.model.findById(rackId).lean();
+
+    if (!links) {
+      throw new NotFoundException('Rack not found');
+    }
+
+    // const rackIds = links.map((x) => x._id);
+    // for (var it of links.itemId) {
+    var item: any = await this.itemModel.findById(itemId);
+    if (!item) {
+      throw new NotFoundException('item not found');
+    }
+
+    const racksWithStock = await this.ItemRackQtyModel.findOne({
+      itemId: itemId,
+      rackId: rackId,
+    }).lean();
+    if (!racksWithStock) {
+      throw new NotFoundException('racksWithStock not found');
+    }
+    // }
+
+    const rackWithStocks = {
+      _id: links._id,
+      code: links.code,
+      remark: links.remark,
+      roomId: links.roomId,
+      itemId: itemId,
+      isScrap: links.isScrap,
+      roomName: links.roomName,
+      createdBy: links.createdBy,
+      itemCode: item?.itemCode.toString(),
+      itemName: item?.itemName.toString(),
+      totalStockQuantity: racksWithStock?.totalStockQuantity ?? 0,
+      stockAvailableQuantity: racksWithStock?.stockAvailableQuantity ?? 0,
+      stockIssueQuantity: racksWithStock?.stockIssueQuantity ?? 0,
+      stockscrapQuantity: racksWithStock?.stockscrapQuantity ?? 0,
+    };
+
+    return rackWithStocks;
+  }
+
+  async findAllRackStockByItem(itemId: string) {
+    const item: any = await this.itemModel.findById(itemId).lean();
+
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
+    // Since rack.itemId is an array of strings,
+    // this matches racks where itemId exists inside that array.
+    const racks: any[] = await this.model.find({ itemId }).lean();
+
+    if (!racks.length) {
+      return [];
+    }
+
+    // IMPORTANT:
+    // This assumes ItemRackQtyModel stores rackId and itemId as strings.
+    // If they are ObjectId, change these accordingly.
+    const rackIds = racks.map((rack) => String(rack._id));
+
+    const stockRows: any[] = await this.ItemRackQtyModel.find({
+      itemId: String(item._id),
+      rackId: { $in: rackIds },
+    }).lean();
+
+    const stockMap = new Map(
+      stockRows.map((stock) => [String(stock.rackId), stock]),
+    );
+
+    const allRacksStock = racks.map((rack) => {
+      const stock = stockMap.get(String(rack._id));
+
+      return {
+        _id: rack._id,
+        code: rack.code ?? '',
+        rackName: rack.rackName ?? '',
+        remark: rack.remark ?? '',
+        roomId: rack.roomId ?? '',
+        itemId: String(item._id),
+        isScrap: rack.isScrap ?? false,
+        roomName: rack.roomName ?? '',
+        createdBy: rack.createdBy ?? '',
+        itemCode: item.itemCode?.toString() ?? '',
+        itemName: item.itemName?.toString() ?? '',
+        totalStockQuantity: stock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: stock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: stock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: stock?.stockscrapQuantity ?? 0,
+      };
+    });
+
+    return allRacksStock;
+  }
+  /* -------------------- REST WRITES -------------------- */
+
+  async create(dto: CreateRackDto) {
+    const operatedBy = this.getOperatorId(dto);
+    if (!operatedBy) throw new BadRequestException('createdBy missing/invalid');
+
+    try {
+      let created: any;
+
+      const room = await this.rooms.findOne(dto.roomId);
+      const rack = await this.model.find({ roomId: room._id, isActive: false });
+      const code = rack[0].code;
+      const idx = code.indexOf('-');
+      const prefix = idx === -1 ? code : code.slice(0, idx); // "IT"
+      const formet = this.counterService.format(prefix, rack.length + 1);
+      const customRackName = String(dto.rackName ?? dto.name ?? '').trim();
+
+      created = await this.model.create([
+        {
+          code: formet,
+          rackName: customRackName,
+          isScrap: room.isScrap,
+          remark: dto.remark ?? '',
+          roomId: dto.roomId,
+          roomName: room?.roomName ? `${room.roomName} (${room.code})` : (room?.code ?? ''),
+          createdBy: dto.createdBy ?? '',
+        },
+      ]);
+
+      created = created?.[0];
+
+      await this.trackModel.create([
+        {
+          operatedBy,
+          type: 'CREATE',
+          qty: 0,
+          refNo: created?.code ?? '',
+          rackId: created?._id ?? null,
+          itemId: '',
+          note: `Rack created: ${created?.code ?? ''}`,
+        },
+      ]);
+
+      return { status: true, msg: 'Rack created', data: created };
+    } finally {
+    }
+  }
+
+  async update(id: string, dto: UpdateRackDto) {
+    const operatedBy = this.getOperatorId(dto);
+    if (!operatedBy)
+      throw new BadRequestException('updatedBy/createdBy missing/invalid');
+
+    // const session = await
+    try {
+      let updated: any;
+
+      // await session.withTransaction(async () => {
+      const patch: any = {};
+      if (dto.rackName != null || dto.name != null) {
+        patch.rackName = String(dto.rackName ?? dto.name).trim();
+      }
+      if (dto.remark != null) patch.remark = dto.remark;
+
+      if (dto.roomId != null) {
+        const room = await this.rooms.findOne(dto.roomId);
+        patch.roomId = dto.roomId;
+        patch.roomName = room?.code ?? '';
+        patch.isScrap = room?.isScrap ?? false;
+      }
+
+      updated = await this.model.findByIdAndUpdate(id, patch, {
+        new: true,
+        // session,
+      });
+      if (!updated) throw new NotFoundException('Rack not found');
+
+      await this.trackModel.create(
+        [
+          {
+            operatedBy,
+            type: 'EDIT',
+            qty: 0,
+            refNo: updated.code ?? '',
+            rackId: updated._id,
+            itemId: updated.itemId
+              ? new Types.ObjectId(String(updated.itemId))
+              : null,
+            note: `Rack updated: ${updated.code ?? ''}`,
+          },
+        ],
+        // { session },
+      );
+      // });
+
+      return { status: true, msg: 'Rack updated', data: updated };
+    } finally {
+      // await session.endSession();
+    }
+  }
+
+  async remove(id: string, operatedById?: string) {
+    const operatedBy =
+      operatedById && Types.ObjectId.isValid(operatedById)
+        ? new Types.ObjectId(operatedById)
+        : null;
+
+    // Block deletion if active stock exists in this rack
+    const activeStockCount = await this.ItemRackQtyModel.countDocuments({
+      rackId: id,
+      totalStockQuantity: { $gt: 0 },
+    });
+    if (activeStockCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete rack: active stock exists in this rack (${activeStockCount} item records)`,
+      );
+    }
+
+    // const session = await
+    try {
+      // await session.withTransaction(async () => {
+      const deleted = await this.model.findByIdAndDelete(id);
+      if (!deleted) throw new NotFoundException('Rack not found');
+
+      // Clean up itemrackqties and item rackId references
+      await this.ItemRackQtyModel.deleteMany({ rackId: id });
+      await this.itemModel.updateMany(
+        { rackId: { $in: [id, new Types.ObjectId(id)] } },
+        { $pull: { rackId: { $in: [id, new Types.ObjectId(id)] } } },
+      );
+
+      // log only if operator provided
+      if (operatedBy) {
+        await this.trackModel.create(
+          [
+            {
+              operatedBy,
+              type: 'CANCELLED',
+              qty: 0,
+              refNo: deleted.code ?? '',
+              rackId: deleted._id,
+              itemId: deleted.itemId
+                ? new Types.ObjectId(String(deleted.itemId))
+                : null,
+              note: `Rack deleted: ${deleted.code ?? ''}`,
+            },
+          ],
+          // { session },
+        );
+      }
+      // });
+
+      return { status: true, msg: 'Rack deleted' };
+    } finally {
+      // await session.endSession();
+    }
+  }
+
+  // ✅ signature extended (optional) but backward compatible
+  async occupyRackIfFree(
+    rackId: string,
+    itemId: string,
+    operatedById?: string,
+  ) {
+    const operatedBy =
+      operatedById && Types.ObjectId.isValid(operatedById)
+        ? new Types.ObjectId(operatedById)
+        : null;
+
+    // const session = await
+    try {
+      let rack: any;
+
+      // await session.withTransaction(async () => {
+      rack = await this.model.findOneAndUpdate(
+        {
+          _id: this.oid(rackId),
+          $or: [
+            // { isOccupied: false },
+            { itemId: null },
+            { itemId: [] },
+            { isActive: false },
+          ],
+        },
+        {
+          // $set: {
+          // isOccupied: true,
+          $push: { itemId: itemId },
+          // },
+        },
+        { new: true },
+      );
+      await this.ItemRackQtyModel.create({
+        itemId: itemId,
+        itemName: rack.itemName,
+        rackId: rackId,
+        rackCode: rack.code,
+      });
+      if (!rack) throw new BadRequestException('Rack already occupied');
+
+      if (operatedBy) {
+        await this.trackModel.create(
+          [
+            {
+              operatedBy,
+              type: 'EDIT',
+              qty: 0,
+              refNo: rack.code ?? '',
+              rackId: rack._id,
+              itemId: this.oid(itemId),
+              note: `Rack occupied by item. Rack=${rack.code ?? ''}, Item=${itemId}`,
+            },
+          ],
+          // { session },
+        );
+      }
+      // });
+
+      return rack;
+    } finally {
+      // await session.endSession();
+    }
+  }
+
+  // ✅ signature extended (optional) but backward compatible
+  async releaseRackForItem(
+    rackId: string,
+    itemId: string,
+    operatedById?: string,
+  ) {
+    const operatedBy =
+      operatedById && Types.ObjectId.isValid(operatedById)
+        ? new Types.ObjectId(operatedById)
+        : null;
+
+    // const session = await
+    try {
+      let released = false;
+
+      // await session.withTransaction(async () => {
+      const res = await this.model.updateOne(
+        { _id: this.oid(rackId), itemId: this.oid(itemId), isActive: false },
+        {
+          $set: {
+            //  isOccupied: false,
+            itemId: [],
+          },
+        },
+        // { session },
+      );
+
+      released = res.modifiedCount > 0;
+
+      var data = await this.ItemRackQtyModel.find({
+        rackId: rackId,
+        itemId: itemId,
+      });
+      for (var qty of data) {
+        await this.ItemRackQtyModel.findByIdAndDelete(qty._id);
+      }
+
+      if (released && operatedBy) {
+        const rack = await this.model
+          .findById(rackId)
+          // .session(session)
+          .lean();
+
+        await this.trackModel.create(
+          [
+            {
+              operatedBy,
+              type: 'EDIT',
+              qty: 0,
+              refNo: (rack as any)?.code ?? '',
+              rackId: this.oid(rackId),
+              itemId: this.oid(itemId),
+              note: `Rack released from item. Rack=${(rack as any)?.code ?? ''}, Item=${itemId}`,
+            },
+          ],
+          // { session },
+        );
+      }
+      // });
+
+      return released;
+    } finally {
+      // await session.endSession();
+    }
+  }
+}

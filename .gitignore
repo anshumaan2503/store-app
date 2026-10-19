@@ -1,0 +1,121 @@
+# =============================================================================
+# Root .gitignore for Store App Monorepo
+# =============================================================================
+
+# --- Environment & Secrets ---
+.env
+.env.*
+*.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+ephemeral/*.env
+**/ephemeral/*.env
+!.env.example
+!**/.env.example
+credentials
+credentials.*
+CREDENTIALS*
+*.credentials
+
+# --- Database Dumps & Data Files ---
+# Whitelist project seed dump for MongoDB restoration
+!dump/
+!dump/**
+*.sqlite
+*.sqlite3
+*.db
+*.rdb
+
+# --- Large Binaries & Application Bundles (>100MB rejection limit) ---
+*.apk
+*.aab
+*.ipa
+*.app
+public/*.apk
+**/public/*.apk
+
+# --- Node.js & NestJS Backend ---
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.temp/
+.tmp/
+pids/
+*.pid
+*.seed
+*.pid.lock
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# --- Flutter & Dart Frontend ---
+.dart_tool/
+**/.dart_tool/
+.pub-cache/
+**/pub-cache/
+.pub/
+**/.pub/
+build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+app.*.symbols
+app.*.map.json
+
+# --- Android Build & Gradle ---
+.gradle/
+**/.gradle/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+local.properties
+**/android/local.properties
+**/android/.gradle/
+
+# --- iOS & macOS Ephemeral / Pods ---
+**/ios/Flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/ios/Flutter/.last_build_id
+**/macos/Flutter/.last_build_id
+**/ios/Flutter/Generated.xcconfig
+**/macos/Flutter/ephemeral/Generated.xcconfig
+**/Pods/
+**/Podfile.lock
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+
+# --- Logs ---
+*.log
+**/logs/
+flutter_*.log
+
+# --- IDEs & OS Files ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# --- Internal Sub-Repo Backups ---
+*.git_backup/
+**/.git_backup/
+*.bak
+*.swp

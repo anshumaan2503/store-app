@@ -1,0 +1,2092 @@
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import {
+  IndentRaise,
+  IndentRaiseDocument,
+  StockRefillRequest,
+  StockRefillRequestDocument,
+} from './schemas/stock-refill-request.schema';
+import {
+  IndentDraft,
+  IndentDraftDocument,
+} from './schemas/indent-draft.schema';
+import { StoreNewItem } from '../new-store/store-items/store-item/entities/store-item.schema';
+import { Counter } from '../new-store/common/entities/counter.schema';
+import {
+  CreateIndentRaiseDto,
+  ReviewIndentRaiseDto,
+  UpdateIndentQtyDto,
+} from './dto/create-indent-raise.dto';
+import {
+  AddIndentDraftItemDto,
+  SubmitCombinedIndentDto,
+  UpdateIndentDraftItemDto,
+} from './dto/indent-draft.dto';
+import {
+  Rack,
+  RackDocument,
+} from '../new-store/locations/rack/entities/rack.schema';
+import {
+  ItemRackQty,
+  ItemRackQtyDocument,
+} from '../new-store/locations/rack/entities/item-rack-qty.schema';
+import { StoreNewItemService } from '../new-store/store-items/store-item/store-item.service';
+import { StoreCartService } from '../new-store/store-items/store-cart/store-cart.service';
+import { IssueService } from '../new-store/store-items/store-item-issue/store-item-issue.service';
+import { StoreNotificationService } from '../store-notification/store-notification.service';
+
+@Injectable()
+export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
+  private eodTimer: NodeJS.Timeout | null = null;
+
+  onModuleInit() {
+    this.scheduleNextEndOfDayRun();
+  }
+
+  onModuleDestroy() {
+    if (this.eodTimer) {
+      clearTimeout(this.eodTimer);
+      this.eodTimer = null;
+    }
+  }
+
+  /**
+   * Schedules the next End-of-Day auto-indent run at 11:59 PM (23:59:00).
+   * Automatically calculates remaining time and recurses daily.
+   */
+  private scheduleNextEndOfDayRun() {
+    const now = new Date();
+    const next2359 = new Date(now);
+    next2359.setHours(23, 59, 0, 0);
+
+    // If already past 23:59:00 today, schedule for tomorrow 23:59:00
+    if (now.getTime() >= next2359.getTime()) {
+      next2359.setDate(next2359.getDate() + 1);
+    }
+
+    const msUntilTarget = next2359.getTime() - now.getTime();
+    console.log(
+      `[EOD Auto-Indent Scheduler] Initialized. Next run scheduled for ${next2359.toLocaleString()} (in ${Math.round(msUntilTarget / 60000)} minutes).`,
+    );
+
+    this.eodTimer = setTimeout(async () => {
+      try {
+        console.log('[EOD Auto-Indent Scheduler] Running 11:59 PM nightly auto-indent job...');
+        await this.runEndOfDayAutoIndentScheduler();
+      } catch (err) {
+        console.error('[EOD Auto-Indent Scheduler] Error during nightly auto-indent execution:', err);
+      } finally {
+        this.scheduleNextEndOfDayRun();
+      }
+    }, msUntilTarget);
+  }
+
+  constructor(
+    @InjectModel(IndentRaise.name, 'store')
+    private readonly indentModel: Model<IndentRaiseDocument>,
+    @InjectModel(IndentDraft.name, 'store')
+    private readonly indentDraftModel: Model<IndentDraftDocument>,
+    @InjectModel(StoreNewItem.name, 'store')
+    private readonly itemModel: Model<StoreNewItem>,
+    @InjectModel(Counter.name, 'store')
+    private readonly counterModel: Model<Counter>,
+    @InjectModel(Rack.name, 'store')
+    private readonly rackModel: Model<RackDocument>,
+    @InjectModel(ItemRackQty.name, 'store')
+    private readonly itemRackQtyModel: Model<ItemRackQtyDocument>,
+    @Inject(forwardRef(() => StoreNewItemService))
+    private readonly storeItemService: StoreNewItemService,
+    @Inject(forwardRef(() => StoreCartService))
+    @Optional()
+    private readonly storeCartService?: StoreCartService,
+    @Inject(forwardRef(() => IssueService))
+    @Optional()
+    private readonly issueService?: IssueService,
+    @Inject(forwardRef(() => StoreNotificationService))
+    @Optional()
+    private readonly notificationService?: StoreNotificationService,
+  ) {}
+
+  /**
+   * Generates a unique, collision-safe indent number formatted as IND-YYYYMMDD-0001.
+   * Uses MongoDB's atomic findOneAndUpdate with $inc to guarantee uniqueness under concurrency.
+   */
+  private async generateIndentNumber(): Promise<string> {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = (today.getMonth() + 1).toString().padStart(2, '0');
+    const d = today.getDate().toString().padStart(2, '0');
+    const prefix = `IND-${y}${m}${d}`;
+    const counterKey = `indent_${y}${m}${d}`;
+
+    // Ensure counter is initialized above any pre-existing records for today
+    const exists = await this.counterModel.exists({ key: counterKey });
+    if (!exists) {
+      const existingLatest = await this.indentModel
+        .findOne({
+          $or: [
+            { indentNumber: { $regex: `^${prefix}` } },
+            { requestNo: { $regex: `^${prefix}` } },
+          ],
+        })
+        .sort({ indentNumber: -1, requestNo: -1 })
+        .select({ indentNumber: 1, requestNo: 1 })
+        .lean()
+        .exec();
+
+      let initialSeq = 0;
+      if (existingLatest) {
+        const lastCode =
+          existingLatest.indentNumber || existingLatest.requestNo || '';
+        const parts = lastCode.split('-');
+        const lastNum = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastNum) && lastNum > 0) {
+          initialSeq = lastNum;
+        }
+      }
+
+      try {
+        await this.counterModel.updateOne(
+          { key: counterKey },
+          { $setOnInsert: { key: counterKey, seq: initialSeq } },
+          { upsert: true },
+        );
+      } catch (err) {
+        // Concurrently inserted by another process; safe to ignore
+      }
+    }
+
+    // Atomic increment operation guaranteed by MongoDB document lock
+    const counterDoc = await this.counterModel.findOneAndUpdate(
+      { key: counterKey },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true },
+    );
+
+    return `${prefix}-${counterDoc.seq.toString().padStart(4, '0')}`;
+  }
+
+  /**
+   * Raises a new Indent for a material.
+   * Business Rules:
+   * 1. Resolves authoritative item master data from StoreNewItem.
+   * 2. Authoritatively verifies that stock is in LOW or ZERO condition:
+   *    (availableQuantity <= threshold OR availableQuantity <= 0).
+   *    Where threshold = (totalStock * 0.1) < 1 ? 1 : (totalStock * 0.1).
+   * 3. Snapshots all 20 reference fields + application workflow fields.
+   * 4. Synchronizes legacy fields (requestNo, requestedQty, unit, itemName) for 100% backward compatibility.
+   * 5. DATA SAFETY: Indent creation strictly does NOT modify physical inventory.
+   */
+  async create(dto: CreateIndentRaiseDto, user: any) {
+    if (!dto.itemId || !Types.ObjectId.isValid(dto.itemId)) {
+      throw new BadRequestException('Invalid or missing item ID');
+    }
+
+    // 1. Authoritative item master lookup
+    const item = await this.itemModel.findById(dto.itemId);
+    if (!item) {
+      throw new NotFoundException('Store item not found');
+    }
+
+    // 2. Authoritative stock condition & maximum quantity evaluation
+    const avail =
+      typeof item.stockAvailableQuantity === 'number'
+        ? item.stockAvailableQuantity
+        : 0;
+    const total =
+      typeof item.totalStockQuantity === 'number'
+        ? item.totalStockQuantity
+        : 0;
+
+    const currentStock = Math.max(0, avail);
+
+    const maxQty =
+      typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+        ? item.maxCapacity
+        : typeof (item as any).maxQuantity === 'number' && (item as any).maxQuantity > 0
+          ? (item as any).maxQuantity
+          : 0;
+
+    // Validate indent quantity (support both indentQty and requestedQty) early
+    const rawQty = dto.indentQty ?? dto.requestedQty;
+    const qty = Number(rawQty);
+    if (!rawQty || isNaN(qty) || qty < 1) {
+      throw new BadRequestException(
+        'Indent quantity must be a valid number greater than or equal to 1',
+      );
+    }
+
+    if (maxQty > 0) {
+      // Rule: If item has reached maximum quantity, manual indent request should NOT be generated
+      if (currentStock >= maxQty) {
+        throw new BadRequestException(
+          `Cannot raise indent: Material "${item.itemName || item.itemCode}" has reached its maximum quantity of ${maxQty} (Current stock: ${currentStock}). Manual indent request cannot be generated.`,
+        );
+      }
+    }
+
+    // ONE INDENT RULE: Check if an active indent already exists for this item
+    const existingActiveIndent = await this.indentModel
+      .findOne({
+        $and: [
+          { $or: [{ itemId: item._id }, { itemId: String(item._id) }] },
+          {
+            $or: [
+              { status: 'PENDING' },
+              { status: 'APPROVED', stockCredited: { $ne: true } },
+            ],
+          },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    if (existingActiveIndent) {
+      const isPending = existingActiveIndent.status === 'PENDING';
+      const existingNo =
+        existingActiveIndent.indentNumber ||
+        existingActiveIndent.requestNo ||
+        'Existing Indent';
+      const existingQty =
+        existingActiveIndent.indentQty ||
+        existingActiveIndent.requestedQty ||
+        0;
+
+      if (isPending) {
+        throw new BadRequestException(
+          `Indent ${existingNo} for ${existingQty} ${item.unit || 'units'} is already pending approval for "${item.itemName || item.itemCode}". Only one active indent is permitted per item. You can edit the existing indent quantity instead.`,
+        );
+      } else {
+        throw new BadRequestException(
+          `Indent ${existingNo} for ${existingQty} ${item.unit || 'units'} is already approved and in-transit for "${item.itemName || item.itemCode}". You can amend / increase the quantity on the approved indent instead of creating a duplicate.`,
+        );
+      }
+    }
+
+    if (maxQty > 0) {
+      // Check active pending indents for this item to ensure indents don't exceed max quantity
+      const pendingIndents = await this.indentModel
+        .find({
+          $or: [{ itemId: item._id }, { itemId: String(item._id) }],
+          status: 'PENDING',
+        })
+        .select('indentQty')
+        .lean()
+        .exec();
+
+      const pendingQty = pendingIndents.reduce(
+        (sum, doc) => sum + (Number(doc.indentQty) || 0),
+        0,
+      );
+
+      const effectiveStock = currentStock + pendingQty;
+
+      if (effectiveStock >= maxQty) {
+        throw new BadRequestException(
+          `Cannot raise indent: Material "${item.itemName || item.itemCode}" has reached its maximum quantity of ${maxQty} considering active pending indents (Current stock: ${currentStock}, Pending indent: ${pendingQty}). Manual indent request cannot be generated.`,
+        );
+      }
+
+      // Rule: Otherwise if the item has not reached maximum quantity, manual request of indent can be generated until it reaches the max quantity
+      const maxAllowedIndent = maxQty - effectiveStock;
+      if (qty > maxAllowedIndent) {
+        throw new BadRequestException(
+          `Cannot raise indent: Requested quantity (${qty}) exceeds the allowable limit to reach maximum quantity of ${maxQty}. Current stock is ${currentStock}${pendingQty > 0 ? ` and pending indents are ${pendingQty}` : ''}. You can only generate an indent up to ${maxAllowedIndent}.`,
+        );
+      }
+    } else {
+      // Fallback: Authoritative low-stock threshold formula when maximum quantity is not configured
+      const minConfig =
+        typeof item.minStockQuantity === 'number' && item.minStockQuantity > 0
+          ? item.minStockQuantity
+          : 0;
+      const threshold =
+        minConfig > 0 ? minConfig : total * 0.1 < 1 ? 1 : total * 0.1;
+
+      // Indent Raise is strictly restricted to LOW or ZERO stock items
+      if (avail > threshold && avail > 0) {
+        throw new BadRequestException(
+          `Cannot raise indent: Material "${item.itemName || item.itemCode}" is not in low or zero stock condition. Available stock is ${avail}, which exceeds the low-stock threshold of ${threshold}. Indent raise is only permitted for low or zero stock materials.`,
+        );
+      }
+    }
+
+    // 4. Generate collision-safe atomic indent number
+    const indentNumber = await this.generateIndentNumber();
+
+    // 5. Authoritative item master snapshots
+    const itemCode = (item.itemCode || '').trim();
+    const itemName = (item.itemName || '').trim();
+    const itemDescription =
+      (dto.itemDescription || '').trim() ||
+      (item.description || '').trim() ||
+      itemName;
+    const unitOfMeasure = (item.unit || dto.unitOfMeasure || '').trim();
+    const make = (dto.make || '').trim();
+    const techSpec = (dto.techSpec || '').trim();
+    const hsnCode = (dto.hsnCode || '').trim();
+    const lineNumber =
+      dto.lineNumber && dto.lineNumber >= 1 ? Number(dto.lineNumber) : 1;
+
+    // Indent quantities
+    const indentQty = qty;
+    const preReqQty =
+      dto.preReqQty !== undefined && !isNaN(Number(dto.preReqQty))
+        ? Number(dto.preReqQty)
+        : 0;
+    const preqQty =
+      dto.preqQty !== undefined && !isNaN(Number(dto.preqQty))
+        ? Number(dto.preqQty)
+        : 0;
+    // Client-provided dto.balanceQty MUST NOT override the authoritative database value.
+    // Stock quantities are strictly calculated from authoritative StoreNewItem:
+    const balanceQty = avail;
+    const currentAvailableQty = avail;
+    const currentTotalQty = total;
+
+    // Document context
+    const documentCategory = (dto.documentCategory || '').trim() || 'ITEM_MASTER';
+    const company = (dto.company || '').trim() || 'STORE';
+    const costCenter = (dto.costCenter || '').trim() || 'MAIN_STORE';
+    const documentDate = dto.documentDate
+      ? new Date(dto.documentDate)
+      : new Date();
+    const documentType = (dto.documentType || '').trim() || 'INDENT';
+
+    // Requester context derived securely from req.user
+    const requestedBy = user?.name || user?.email || 'Store User';
+    const requesterId = (user?._id || user?.uid || '').toString();
+    const reason = (dto.reason || '').trim();
+    const indentType = (dto.indentType || '').trim() || 'STORE_REFILL';
+    const sourceIssueId = (dto.sourceIssueId || '').trim();
+
+    const now = new Date();
+
+    const doc = new this.indentModel({
+      indentType,
+      sourceIssueId,
+      // Reference business fields
+      indentNumber,
+      itemCode,
+      itemDescription,
+      make,
+      techSpec,
+      unitOfMeasure,
+      lineNumber,
+      createdOn: now,
+      lastChangedOn: now,
+      indentQty,
+      preReqQty,
+      preqQty,
+      balanceQty,
+      documentCategory,
+      company,
+      costCenter,
+      documentDate,
+      documentType,
+      requestedBy,
+      hsnCode,
+
+      // Workflow & Authorization fields
+      itemId: item._id,
+      requesterId,
+      status: this.storeCartService?.isIndentApprovalRequired() ? 'PENDING' : 'APPROVED',
+      reason,
+      currentAvailableQty: avail,
+      currentTotalQty: total,
+      timeline: [
+        {
+          action: 'CREATED',
+          title: 'Indent Raised',
+          description: this.storeCartService?.isIndentApprovalRequired()
+            ? (reason ? `Requested: ${reason}` : 'Submitted for approver review')
+            : 'Auto-approved (Indent approval disabled in system settings)',
+          actorName: requestedBy,
+          timestamp: now,
+        },
+        ...(this.storeCartService?.isIndentApprovalRequired()
+          ? []
+          : [
+              {
+                action: 'APPROVED',
+                title: 'Auto-Approved',
+                description: 'Directly available in Receive section',
+                actorName: 'System Settings',
+                timestamp: now,
+              },
+            ]),
+      ],
+
+      // Backward-compatibility mirror fields
+      requestNo: indentNumber,
+      itemName,
+      unit: unitOfMeasure,
+      requestedQty: indentQty,
+    });
+
+    // DATA SAFETY: Indent raise creation strictly does NOT modify physical inventory.
+    const saved = await doc.save();
+    return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Evaluates an item's available stock against its configured minimum stock threshold (minStockQuantity).
+   *
+   * NEW ARCHITECTURE (End-of-Day Scheduler):
+   * - Auto-indents are strictly NOT raised immediately when an item reaches minimum quantity.
+   * - Instead, the system maintains the item as "isIndentReady: true" (indent-ready state).
+   * - At 11:59 PM nightly, the End-of-Day scheduler evaluates all indent-ready items and combines
+   *   them into a single consolidated indent requisition.
+   */
+  async checkAndTriggerAutoIndent(
+    itemId: string | Types.ObjectId,
+    currentAvailable?: number,
+    operatorInfo?: { name?: string; id?: string },
+  ): Promise<any | null> {
+    if (!itemId) return null;
+
+    const item = await this.itemModel.findById(itemId);
+    if (!item || item.isScrap) return null;
+
+    const minStock =
+      typeof item.minStockQuantity === 'number' && item.minStockQuantity > 0
+        ? item.minStockQuantity
+        : 0;
+
+    // Only items with an explicitly configured minimum threshold trigger auto-refills
+    if (minStock <= 0) return null;
+
+    const avail =
+      typeof currentAvailable === 'number'
+        ? currentAvailable
+        : typeof item.stockAvailableQuantity === 'number'
+          ? item.stockAvailableQuantity
+          : 0;
+
+    // Active non-expired in-cart units for this item across other users (ignoring user submitting checkout)
+    const inCart = this.storeCartService
+      ? await this.storeCartService.getItemInCartQuantity(
+          String(item._id),
+          operatorInfo?.id,
+        )
+      : 0;
+
+    // Combined stock: Available Stock + In-Cart Quantity
+    const combinedStock = avail + inCart;
+
+    // Check if combined stock reached/fell below minimum threshold
+    const isReady = combinedStock <= minStock;
+
+    if (item.isIndentReady !== isReady) {
+      await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: isReady });
+      if (isReady) {
+        console.log(
+          `[Indent-Ready] Item "${item.itemName}" (${item.itemCode}) reached min stock (${combinedStock} <= ${minStock}). Maintained as INDENT-READY for 11:59 PM batch.`,
+        );
+      }
+    }
+
+    return {
+      isIndentReady: isReady,
+      itemId: String(item._id),
+      combinedStock,
+      minStock,
+    };
+  }
+
+  /**
+   * Automatically cancels/rejects a PENDING system-generated auto-indent if stock is restored
+   * above the minimum threshold (e.g., when an issue requisition is rejected, cancelled, or expires).
+   */
+  async checkAndCancelAutoIndentIfStockRestored(
+    itemId: string | Types.ObjectId,
+    currentAvailable?: number,
+    systemNote?: string,
+  ): Promise<any | null> {
+    if (!itemId) return null;
+
+    const item = await this.itemModel.findById(itemId);
+    if (!item) return null;
+
+    const minStock =
+      typeof item.minStockQuantity === 'number' && item.minStockQuantity > 0
+        ? item.minStockQuantity
+        : 0;
+
+    if (minStock <= 0) return null;
+
+    const avail =
+      typeof currentAvailable === 'number'
+        ? currentAvailable
+        : typeof item.stockAvailableQuantity === 'number'
+          ? item.stockAvailableQuantity
+          : 0;
+
+    const inCart = this.storeCartService
+      ? await this.storeCartService.getItemInCartQuantity(String(item._id))
+      : 0;
+
+    const combinedStock = avail + inCart;
+
+    const maxQty =
+      typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+        ? item.maxCapacity
+        : typeof (item as any).maxQuantity === 'number' && (item as any).maxQuantity > 0
+          ? (item as any).maxQuantity
+          : 0;
+
+    const isAboveMin = combinedStock > minStock;
+    const isAtOrAboveMax = maxQty > 0 && combinedStock >= maxQty;
+
+    // Only cancel or reduce if combined stock has recovered ABOVE minimum threshold OR reached max capacity
+    if (!isAboveMin && !isAtOrAboveMax) {
+      return null;
+    }
+
+    // Reset indent-ready state since stock has recovered above minimum
+    if (item.isIndentReady && isAboveMin) {
+      await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: false });
+    }
+
+    // Find any PENDING auto-refill or shortage indent for this item
+    const pendingAutoIndent = await this.indentModel.findOne({
+      $and: [
+        { $or: [{ itemId: item._id }, { itemId: String(item._id) }] },
+        { status: 'PENDING' },
+        {
+          $or: [
+            { requestedBy: { $regex: /SYSTEM/i } },
+            { reason: { $regex: /Auto Refill/i } },
+            { reason: { $regex: /Auto-Indent/i } },
+            { indentType: 'AUTO_REFILL' },
+            { indentType: 'ISSUE_SHORTAGE' },
+          ],
+        },
+      ],
+    });
+
+    if (!pendingAutoIndent) return null;
+
+    const now = new Date();
+
+    if (isAtOrAboveMax) {
+      // Stock already meets or exceeds max capacity; cancel the indent completely
+      pendingAutoIndent.status = 'REJECTED';
+      pendingAutoIndent.reviewRemarks =
+        systemNote ||
+        `Auto-cancelled by System: Stock restored to ${avail} (combined: ${combinedStock}), reaching maximum capacity (${maxQty}).`;
+      pendingAutoIndent.reviewedBy = 'SYSTEM (Auto Revert)';
+      pendingAutoIndent.reviewedById = 'system';
+      pendingAutoIndent.reviewedAt = now;
+      pendingAutoIndent.lastChangedOn = now;
+      pendingAutoIndent.timeline = Array.isArray(pendingAutoIndent.timeline)
+        ? pendingAutoIndent.timeline
+        : [];
+      pendingAutoIndent.timeline.push({
+        action: 'REJECTED',
+        title: 'Auto-Cancelled by System',
+        description: pendingAutoIndent.reviewRemarks,
+        actorName: 'SYSTEM',
+        timestamp: now,
+      });
+      const saved = await pendingAutoIndent.save();
+      return this.normalizeOutput(saved);
+    } else if (
+      maxQty > 0 &&
+      combinedStock + (pendingAutoIndent.indentQty || 0) > maxQty
+    ) {
+      // Scale down the indent quantity to maxCapacity - combinedStock
+      const oldQty = pendingAutoIndent.indentQty || 0;
+      const newQty = maxQty - combinedStock;
+      pendingAutoIndent.indentQty = newQty;
+      pendingAutoIndent.requestedQty = newQty;
+      pendingAutoIndent.timeline = Array.isArray(pendingAutoIndent.timeline)
+        ? pendingAutoIndent.timeline
+        : [];
+      pendingAutoIndent.timeline.push({
+        action: 'QTY_AUTO_REDUCED',
+        title: 'Quantity Auto-Reduced on Stock Reversion',
+        description: `Quantity automatically reduced from ${oldQty} to ${newQty} ${item.unit || 'units'} to respect maximum capacity (${maxQty}) after stock was restored.`,
+        actorName: 'SYSTEM',
+        timestamp: now,
+      });
+      const saved = await pendingAutoIndent.save();
+      return this.normalizeOutput(saved);
+    } else if (isAboveMin) {
+      // Stock recovered above minimum threshold
+      pendingAutoIndent.status = 'REJECTED';
+      pendingAutoIndent.reviewRemarks =
+        systemNote ||
+        `Auto-cancelled by System: Stock restored to ${avail} (combined: ${combinedStock}), exceeding minimum threshold (${minStock}).`;
+      pendingAutoIndent.reviewedBy = 'SYSTEM (Auto Revert)';
+      pendingAutoIndent.reviewedById = 'system';
+      pendingAutoIndent.reviewedAt = now;
+      pendingAutoIndent.lastChangedOn = now;
+      pendingAutoIndent.timeline = Array.isArray(pendingAutoIndent.timeline)
+        ? pendingAutoIndent.timeline
+        : [];
+      pendingAutoIndent.timeline.push({
+        action: 'REJECTED',
+        title: 'Auto-Cancelled by System',
+        description: pendingAutoIndent.reviewRemarks,
+        actorName: 'SYSTEM',
+        timestamp: now,
+      });
+      const saved = await pendingAutoIndent.save();
+      return this.normalizeOutput(saved);
+    }
+
+    return null;
+  }
+
+  /**
+   * End-of-Day Scheduler: Executes nightly at 11:59 PM (or on-demand).
+   * 1. Evaluates all active items where (stockAvailableQuantity + inCart) <= minStockQuantity.
+   * 2. Automatically calculates required indent quantities.
+   * 3. Combines ALL eligible items into a single consolidated indent (shared groupIndentNumber).
+   * 4. Moves the consolidated indent to the approval workflow (status: PENDING).
+   */
+  async runEndOfDayAutoIndentScheduler(): Promise<{
+    success: boolean;
+    eligibleItemCount: number;
+    groupIndentNumber?: string;
+    indents?: any[];
+    msg: string;
+  }> {
+    try {
+      console.log('[EOD Indent Scheduler] Starting End-of-Day auto-indent evaluation...');
+
+      // 1. Find all active products with an active minimum stock threshold
+      const items = await this.itemModel
+        .find({
+          isScrap: { $ne: true },
+          minStockQuantity: { $gt: 0 },
+        })
+        .exec();
+
+      const eligibleItems: Array<{
+        item: any;
+        avail: number;
+        inCart: number;
+        combinedStock: number;
+        minStock: number;
+        indentQty: number;
+      }> = [];
+
+      for (const item of items) {
+        const minStock =
+          typeof item.minStockQuantity === 'number' ? item.minStockQuantity : 0;
+        if (minStock <= 0) continue;
+
+        const avail =
+          typeof item.stockAvailableQuantity === 'number'
+            ? item.stockAvailableQuantity
+            : 0;
+        const inCart = this.storeCartService
+          ? await this.storeCartService.getItemInCartQuantity(String(item._id))
+          : 0;
+
+        const combinedStock = avail + inCart;
+
+        if (combinedStock <= minStock) {
+          // Maintain indent-ready flag
+          await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: true });
+
+          // Avoid duplicate indents: Check if an active indent (PENDING or APPROVED uncredited) already exists for this item
+          const existingActive = await this.indentModel
+            .findOne({
+              $and: [
+                { $or: [{ itemId: item._id }, { itemId: String(item._id) }] },
+                {
+                  $or: [
+                    { status: 'PENDING' },
+                    { status: 'APPROVED', stockCredited: { $ne: true } },
+                  ],
+                },
+              ],
+            })
+            .lean()
+            .exec();
+
+          if (existingActive) {
+            console.log(
+              `[EOD Indent Scheduler] Item "${item.itemName}" already has active indent #${existingActive.indentNumber} (${existingActive.status}). Skipping duplicate.`,
+            );
+            continue;
+          }
+
+          // Calculate required indent quantity:
+          // Formula: (maxCapacity / 2) - combinedStock (or defaultRefillQuantity / minStock)
+          let indentQty = 1;
+          const maxQty =
+            typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+              ? item.maxCapacity
+              : 0;
+          if (maxQty > 0) {
+            const halfMax = Math.ceil(maxQty / 2);
+            const calculatedQty = halfMax - combinedStock;
+            if (calculatedQty > 0) {
+              indentQty = calculatedQty;
+            } else if (
+              item.defaultRefillQuantity &&
+              item.defaultRefillQuantity > 0
+            ) {
+              indentQty = item.defaultRefillQuantity;
+            } else {
+              indentQty = Math.max(1, minStock);
+            }
+          } else if (
+            item.defaultRefillQuantity &&
+            item.defaultRefillQuantity > 0
+          ) {
+            indentQty = item.defaultRefillQuantity;
+          } else {
+            indentQty = Math.max(1, minStock);
+          }
+
+          eligibleItems.push({
+            item,
+            avail,
+            inCart,
+            combinedStock,
+            minStock,
+            indentQty,
+          });
+        } else {
+          if (item.isIndentReady) {
+            await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: false });
+          }
+        }
+      }
+
+      if (eligibleItems.length === 0) {
+        console.log('[EOD Indent Scheduler] No items qualified for End-of-Day auto-indent.');
+        return {
+          success: true,
+          eligibleItemCount: 0,
+          msg: 'No items currently qualify for End-of-Day auto-indent (all items have adequate stock).',
+        };
+      }
+
+      // 2. Combine all eligible items into a SINGLE consolidated indent requisition
+      const baseIndentNumber = await this.generateIndentNumber();
+      const now = new Date();
+      const createdDocs: any[] = [];
+
+      for (let i = 0; i < eligibleItems.length; i++) {
+        const entry = eligibleItems[i];
+        const lineNumber = i + 1;
+        const lineIndentNumber = `${baseIndentNumber}-${String(lineNumber).padStart(2, '0')}`;
+        const item = entry.item;
+
+        const itemCode = (item.itemCode || '').trim();
+        const itemName = (item.itemName || '').trim();
+        const itemDescription = (item.description || '').trim() || itemName;
+        const unitOfMeasure = (item.unit || '').trim() || 'NOS';
+        const total =
+          typeof item.totalStockQuantity === 'number'
+            ? item.totalStockQuantity
+            : 0;
+
+        const doc = new this.indentModel({
+          indentType: 'AUTO_REFILL',
+          indentNumber: lineIndentNumber,
+          groupIndentNumber: baseIndentNumber,
+          itemCode,
+          itemDescription,
+          make: '',
+          techSpec: '',
+          unitOfMeasure,
+          lineNumber,
+          createdOn: now,
+          lastChangedOn: now,
+          createdAt: now,
+          updatedAt: now,
+          indentQty: entry.indentQty,
+          preReqQty: 0,
+          preqQty: 0,
+          balanceQty: entry.avail,
+          documentCategory: 'ITEM_MASTER',
+          company: 'STORE',
+          costCenter: 'MAIN_STORE',
+          documentDate: now,
+          documentType: 'INDENT',
+          requestedBy: 'SYSTEM (End-of-Day Auto-Indent)',
+          hsnCode: '',
+
+          itemId: item._id,
+          requesterId: 'system',
+          status: 'PENDING',
+          reason: `EOD Auto-Indent: Combined stock (${entry.combinedStock} = Avail ${entry.avail} + Cart ${entry.inCart}) <= min threshold (${entry.minStock}).`,
+          currentAvailableQty: entry.avail,
+          currentTotalQty: total,
+          stockCredited: false,
+
+          // Legacy mirrors
+          requestNo: lineIndentNumber,
+          itemName,
+          unit: unitOfMeasure,
+          requestedQty: entry.indentQty,
+        });
+
+        const saved = await doc.save();
+        createdDocs.push(saved);
+
+        // Reset isIndentReady because indent is now officially submitted to approval workflow
+        await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: false });
+      }
+
+      console.log(
+        `[EOD Indent Scheduler] Successfully generated consolidated indent #${baseIndentNumber} with ${createdDocs.length} items.`,
+      );
+
+      return {
+        success: true,
+        eligibleItemCount: createdDocs.length,
+        groupIndentNumber: baseIndentNumber,
+        indents: createdDocs.map((d) => this.normalizeOutput(d)),
+        msg: `Consolidated End-of-Day Indent #${baseIndentNumber} generated with ${createdDocs.length} item(s) and moved to approval workflow.`,
+      };
+    } catch (err: any) {
+      console.error('[EOD Indent Scheduler] Error executing End-of-Day scheduler:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Retrieves all items currently qualifying as "indent-ready" (Available + Cart <= MinStock)
+   * awaiting the 11:59 PM End-of-Day batch scheduler.
+   */
+  async getIndentReadyItems(): Promise<any[]> {
+    const items = await this.itemModel
+      .find({
+        isScrap: { $ne: true },
+        minStockQuantity: { $gt: 0 },
+      })
+      .lean()
+      .exec();
+
+    const readyItems: any[] = [];
+
+    for (const item of items) {
+      const minStock =
+        typeof item.minStockQuantity === 'number' ? item.minStockQuantity : 0;
+      if (minStock <= 0) continue;
+
+      const avail =
+        typeof item.stockAvailableQuantity === 'number'
+          ? item.stockAvailableQuantity
+          : 0;
+      const inCart = this.storeCartService
+        ? await this.storeCartService.getItemInCartQuantity(String(item._id))
+        : 0;
+
+      const combinedStock = avail + inCart;
+
+      if (combinedStock <= minStock) {
+        const existingPending = await this.indentModel
+          .findOne({
+            $or: [{ itemId: item._id }, { itemId: String(item._id) }],
+            status: 'PENDING',
+          })
+          .lean()
+          .exec();
+
+        let indentQty = 1;
+        const maxQty =
+          typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+            ? item.maxCapacity
+            : 0;
+        if (maxQty > 0) {
+          const halfMax = Math.ceil(maxQty / 2);
+          indentQty = Math.max(1, halfMax - combinedStock);
+        } else {
+          indentQty = Math.max(1, minStock);
+        }
+
+        readyItems.push({
+          itemId: String(item._id),
+          itemName: item.itemName,
+          itemCode: item.itemCode,
+          unit: item.unit,
+          availableStock: avail,
+          inCartQuantity: inCart,
+          combinedStock,
+          minimumStock: minStock,
+          suggestedIndentQty: indentQty,
+          hasExistingPendingIndent: !!existingPending,
+          existingPendingIndentNumber: existingPending?.indentNumber,
+        });
+      }
+    }
+
+    return readyItems;
+  }
+
+  /**
+   * Retrieves all indents with optional status, search, itemId, and uncredited filters.
+   */
+  async findAll(
+    status?: string,
+    search?: string,
+    itemId?: string,
+    uncredited?: boolean,
+  ) {
+    const filter: any = {};
+    if (status && status.toUpperCase() !== 'ALL') {
+      filter.status = status.toUpperCase();
+    }
+    if (uncredited) {
+      filter.stockCredited = { $ne: true };
+    }
+    if (itemId) {
+      const cleanId = String(itemId).trim();
+      if (Types.ObjectId.isValid(cleanId)) {
+        filter.$or = [
+          { itemId: new Types.ObjectId(cleanId) },
+          { itemId: cleanId },
+        ];
+      } else {
+        filter.itemId = cleanId;
+      }
+    }
+    if (search && search.trim()) {
+      const q = search.trim();
+      const searchConditions = [
+        { indentNumber: { $regex: q, $options: 'i' } },
+        { requestNo: { $regex: q, $options: 'i' } },
+        { itemCode: { $regex: q, $options: 'i' } },
+        { itemDescription: { $regex: q, $options: 'i' } },
+        { itemName: { $regex: q, $options: 'i' } },
+        { make: { $regex: q, $options: 'i' } },
+        { techSpec: { $regex: q, $options: 'i' } },
+        { requestedBy: { $regex: q, $options: 'i' } },
+        { reason: { $regex: q, $options: 'i' } },
+        { documentCategory: { $regex: q, $options: 'i' } },
+        { documentType: { $regex: q, $options: 'i' } },
+        { hsnCode: { $regex: q, $options: 'i' } },
+      ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchConditions;
+      }
+    }
+
+    const docs = await this.indentModel
+      .find(filter)
+      .sort({ createdOn: -1, createdAt: -1, _id: -1 })
+      .exec();
+
+    return docs.map((doc) => this.normalizeOutput(doc));
+  }
+
+  /**
+   * Retrieves a single indent record by ID.
+   */
+  async findOne(id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id).exec();
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    return this.normalizeOutput(doc);
+  }
+
+  /**
+   * Approves an indent request.
+   * If directStockIn is requested, simultaneously credits physical stock into a rack.
+   */
+  async approve(id: string, dto: ReviewIndentRaiseDto, user: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    if (doc.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Cannot approve indent. Current status is already ${doc.status}`,
+      );
+    }
+
+    const now = new Date();
+
+    // Approval Safety & Max Capacity Auto-Cap
+    if (doc.itemId) {
+      const item = await this.itemModel.findById(doc.itemId);
+      if (item) {
+        const currentAvail =
+          typeof item.stockAvailableQuantity === 'number'
+            ? item.stockAvailableQuantity
+            : 0;
+        const maxCap =
+          typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+            ? item.maxCapacity
+            : typeof (item as any).maxQuantity === 'number' &&
+                (item as any).maxQuantity > 0
+              ? (item as any).maxQuantity
+              : 0;
+
+        if (maxCap > 0) {
+          if (currentAvail >= maxCap) {
+            // Stock has already reached max capacity (e.g. from returns, reversions, or other receipts)
+            doc.status = 'REJECTED';
+            doc.reviewRemarks = dto?.reviewRemarks
+              ? `${dto.reviewRemarks} (Auto-cancelled: Current stock ${currentAvail} already meets/exceeds max capacity ${maxCap})`
+              : `Auto-cancelled: Current stock (${currentAvail}) already meets or exceeds maximum capacity (${maxCap}). Indent no longer required.`;
+            doc.reviewedBy = user?.name || user?.email || 'Store Approver';
+            doc.reviewedById = (user?._id || user?.uid || '').toString();
+            doc.reviewedAt = now;
+            doc.lastChangedOn = now;
+            doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+            doc.timeline.push({
+              action: 'REJECTED',
+              title: 'Auto-Cancelled (Max Capacity Met)',
+              description: `Current available stock (${currentAvail}) already reaches max capacity (${maxCap}). Indent was cancelled to prevent overstocking.`,
+              actorName: doc.reviewedBy || 'Store Approver',
+              timestamp: now,
+            });
+            const saved = await doc.save();
+            return this.normalizeOutput(saved);
+          }
+
+          const requestedQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
+          if (currentAvail + requestedQty > maxCap) {
+            // Auto-cap the approved quantity to fill only up to max capacity!
+            const cappedQty = maxCap - currentAvail;
+            const oldQty = requestedQty;
+            doc.indentQty = cappedQty;
+            doc.requestedQty = cappedQty;
+            if (dto?.creditQty) {
+              dto.creditQty = Math.min(dto.creditQty, cappedQty);
+            }
+            doc.reviewRemarks = dto?.reviewRemarks
+              ? `${dto.reviewRemarks} (Auto-capped from ${oldQty} to ${cappedQty} to stay within max capacity ${maxCap})`
+              : `Approved with Auto-Cap: Quantity adjusted from ${oldQty} to ${cappedQty} ${doc.unitOfMeasure || 'units'} to not exceed maximum capacity (${maxCap}).`;
+
+            doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+            doc.timeline.push({
+              action: 'QTY_AUTO_CAPPED',
+              title: 'Approved with Auto-Cap',
+              description: `Quantity auto-capped from ${oldQty} to ${cappedQty} to stay within maximum capacity (${maxCap}).`,
+              actorName: user?.name || user?.email || 'Store Approver',
+              timestamp: now,
+            });
+          }
+        }
+      }
+    }
+
+    doc.status = 'APPROVED';
+    doc.reviewedBy = user?.name || user?.email || 'Store Approver';
+    doc.reviewedById = (user?._id || user?.uid || '').toString();
+    doc.reviewedAt = now;
+    doc.lastChangedOn = now;
+    if (dto?.reviewRemarks) {
+      doc.reviewRemarks = dto.reviewRemarks.trim();
+    }
+
+    doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+    doc.timeline.push({
+      action: 'APPROVED',
+      title: 'Indent Approved',
+      description: dto?.reviewRemarks
+        ? dto.reviewRemarks.trim()
+        : 'Approved for warehouse receiving',
+      actorName: user?.name || user?.email || 'Store Approver',
+      timestamp: now,
+    });
+
+    // Option B: Direct stock credit upon approval if requested
+    if (dto?.directStockIn) {
+      await this.performDirectStockCredit(doc, dto, user);
+    }
+
+    const saved = await doc.save();
+    return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Directly credits physical stock into a rack for an indent (works for both pending and already-approved indents).
+   */
+  async creditStock(id: string, dto: ReviewIndentRaiseDto, user: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    if (doc.status === 'REJECTED') {
+      throw new BadRequestException('Cannot credit stock for a rejected indent');
+    }
+    if (doc.stockCredited) {
+      throw new BadRequestException('Stock has already been credited for this indent');
+    }
+
+    const now = new Date();
+    if (doc.status === 'PENDING') {
+      doc.status = 'APPROVED';
+      doc.reviewedBy = user?.name || user?.email || 'Store Approver';
+      doc.reviewedById = (user?._id || user?.uid || '').toString();
+      doc.reviewedAt = now;
+    }
+    if (dto?.reviewRemarks) {
+      doc.reviewRemarks = dto.reviewRemarks.trim();
+    }
+    doc.lastChangedOn = now;
+
+    await this.performDirectStockCredit(doc, dto, user);
+
+    const saved = await doc.save();
+    return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Helper to perform physical stock credit into rack via StoreNewItemService.
+   */
+  private async performDirectStockCredit(
+    doc: any,
+    dto: ReviewIndentRaiseDto,
+    user: any,
+  ) {
+    const rawQty = dto.creditQty ?? doc.indentQty ?? doc.requestedQty;
+    const qty = Number(rawQty);
+    if (!rawQty || isNaN(qty) || qty <= 0) {
+      throw new BadRequestException('Credit quantity must be greater than 0');
+    }
+
+    // 1. Determine target rack
+    let targetRackId = dto.rackId ? String(dto.rackId).trim() : '';
+    let targetRack: any = null;
+
+    if (targetRackId && Types.ObjectId.isValid(targetRackId)) {
+      targetRack = await this.rackModel.findById(targetRackId);
+    }
+
+    if (!targetRack) {
+      // Find rack already associated with this item
+      const itemRack = await this.itemRackQtyModel
+        .findOne({ itemId: String(doc.itemId) })
+        .sort({ updatedAt: -1 });
+
+      if (itemRack?.rackId && Types.ObjectId.isValid(String(itemRack.rackId))) {
+        targetRack = await this.rackModel.findById(itemRack.rackId);
+      }
+    }
+
+    if (!targetRack) {
+      // Fallback: Find any active rack in the store
+      targetRack = await this.rackModel.findOne({
+        isActive: { $ne: false },
+        isScrap: { $ne: true },
+      });
+      if (!targetRack) {
+        targetRack = await this.rackModel.findOne();
+      }
+    }
+
+    if (!targetRack) {
+      throw new BadRequestException(
+        'No warehouse rack available to credit stock into. Please create or configure a rack first.',
+      );
+    }
+
+    targetRackId = String(targetRack._id);
+    const rackCode = targetRack.code || targetRack.rackName || 'RACK';
+
+    // 2. Operator identity
+    let operatorId = (user?._id || user?.uid || '').toString();
+    if (!Types.ObjectId.isValid(operatorId)) {
+      operatorId = '650000000000000000000001';
+    }
+
+    // 3. Delegate to StoreNewItemService receiveItem (updates rack, item available, and creates StoreReceive)
+    const receiveResult = await this.storeItemService.receiveItem({
+      itemId: String(doc.itemId),
+      rackId: targetRackId,
+      qty,
+      receivedBy: operatorId,
+      remark: `Indent Stock In: ${doc.indentNumber || doc.requestNo || 'Direct Credit'}${dto.reviewRemarks ? ' - ' + dto.reviewRemarks : ''}`,
+      recNo: doc.indentNumber || doc.requestNo,
+      requestId: `IND-CREDIT-${doc._id}`,
+    });
+
+    // 4. Mark doc
+    doc.stockCredited = true;
+    doc.stockCreditedAt = new Date();
+    doc.creditedRackId = targetRackId;
+    doc.creditedRackCode = rackCode;
+    doc.creditedQty = qty;
+    doc.receiveDocId = receiveResult?.id || '';
+
+    // 5. Automatic Issue Creation & Stock Reservation for Requester Indents
+    const reqId = (doc.requesterId || '').toString();
+    const isHumanRequester =
+      reqId &&
+      reqId !== 'system' &&
+      Types.ObjectId.isValid(reqId) &&
+      !doc.requestedBy?.toUpperCase().includes('AUTO REFILL');
+
+    if (isHumanRequester && this.issueService) {
+      try {
+        const autoReason =
+          doc.reason?.trim() ||
+          `Shortage fulfilled from Indent ${doc.indentNumber || doc.requestNo}`;
+        const autoRemark = `Auto-generated Issue for Requester Indent ${doc.indentNumber || doc.requestNo} (Qty: ${qty})`;
+
+        const issueResult = await this.issueService.createDraftBulk({
+          createdBy: reqId,
+          reason: autoReason,
+          remark: autoRemark,
+          lines: [
+            {
+              itemId: String(doc.itemId),
+              requestedQty: qty,
+            },
+          ],
+        });
+        console.log(
+          `[AutoIssue] Successfully auto-created Issue Request ${issueResult?.issNo} for Requester ${reqId} from Indent ${doc.indentNumber}`,
+        );
+
+        if (issueResult?._id) {
+          doc.sourceIssueId = String(issueResult._id);
+          doc.timeline.push({
+            action: 'AUTO_ISSUED',
+            title: `Auto-Reserved for Requester (${issueResult.issNo})`,
+            description: `Auto-reserved ${qty} units for ${doc.requestedBy || 'requester'} under Issue Request ${issueResult.issNo}`,
+            actorName: 'System Automation',
+            timestamp: new Date(),
+          });
+          await doc.save();
+        }
+
+        if (this.notificationService) {
+          await this.notificationService.notifyRequesterStockArrivedAndAutoIssued({
+            userId: reqId,
+            itemId: String(doc.itemId),
+            itemName: doc.itemName || doc.itemDescription || 'Requested Item',
+            itemCode: doc.itemCode || '',
+            unit: doc.unitOfMeasure || '',
+            qty,
+            indentNo: doc.indentNumber || doc.requestNo || '',
+            issueNo: issueResult?.issNo,
+          });
+        }
+      } catch (err: any) {
+        console.error(
+          `[AutoIssue] Failed to auto-create Issue Request for Requester ${reqId}:`,
+          err?.message || err,
+        );
+        doc.timeline.push({
+          action: 'AUTO_ISSUE_FAILED',
+          title: 'Auto-Reservation Failed',
+          description: `Auto-reservation failed for requester: ${err?.message || err}`,
+          actorName: 'System Automation',
+          timestamp: new Date(),
+        });
+        await doc.save().catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Fulfills an approved indent when the item is physically received via the Store Receive screen.
+   * Marks the indent as credited, links the receive receipt, auto-creates an Issue Request for the requester,
+   * and sends 2 notifications to the requester.
+   */
+  async fulfillIndentFromReceive(params: {
+    indentId: string;
+    receivingDocId: string;
+    rackId: string;
+    qty: number;
+    operatorId: string;
+    remark?: string;
+    autoIssue?: boolean;
+  }): Promise<any> {
+    if (!params.indentId || !Types.ObjectId.isValid(params.indentId)) {
+      return null;
+    }
+
+    const doc = await this.indentModel.findById(params.indentId);
+    if (!doc) return null;
+
+    let targetRackCode = '';
+    if (params.rackId && Types.ObjectId.isValid(params.rackId)) {
+      const rack = await this.rackModel.findById(params.rackId);
+      if (rack) {
+        targetRackCode = rack.code || rack.rackName || 'RACK';
+      }
+    }
+
+    const now = new Date();
+    doc.status = 'APPROVED';
+    doc.stockCredited = true;
+    doc.stockCreditedAt = now;
+    doc.creditedRackId = params.rackId;
+    doc.creditedRackCode = targetRackCode;
+    doc.creditedQty = params.qty;
+    doc.receiveDocId = params.receivingDocId;
+    doc.lastChangedOn = now;
+    doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+    doc.timeline.push({
+      action: 'RECEIVED',
+      title: 'Stock Received & Putaway',
+      description: `Received ${params.qty} into rack ${targetRackCode}${params.remark ? ' - ' + params.remark : ''}`,
+      actorName: params.operatorId || 'Store Operator',
+      timestamp: now,
+    });
+    await doc.save();
+
+    // Intelligent origin-based autoIssue resolution:
+    // 1. If explicitly passed (true/false), honor the caller's parameter.
+    // 2. Otherwise auto-detect:
+    //    - ISSUE_SHORTAGE -> true (auto-reserve for waiting requester)
+    //    - STORE_REFILL / AUTO_REFILL -> false (direct to available store inventory)
+    const effectiveIndentType = doc.indentType || (
+      (doc.requestedBy || '').toUpperCase().includes('AUTO REFILL') ||
+      (doc.requestedBy || '').toUpperCase().includes('SYSTEM')
+        ? 'AUTO_REFILL'
+        : (doc.reason || '').toUpperCase().includes('SHORTAGE')
+          ? 'ISSUE_SHORTAGE'
+          : 'STORE_REFILL'
+    );
+    // Strict server-side enforcement:
+    // General store refills & auto refills CANNOT be converted to issues; they MUST credit available stock.
+    // Issue shortages strictly route to auto-issue (reserve for requester).
+    const shouldAutoIssue = effectiveIndentType === 'ISSUE_SHORTAGE'
+      ? (params.autoIssue !== undefined ? params.autoIssue === true : true)
+      : false;
+
+    const reqId = (doc.requesterId || '').toString();
+    const isHumanRequester =
+      shouldAutoIssue &&
+      reqId &&
+      reqId !== 'system' &&
+      Types.ObjectId.isValid(reqId) &&
+      !doc.requestedBy?.toUpperCase().includes('AUTO REFILL');
+
+    let issueResult: any = null;
+    if (isHumanRequester && this.issueService) {
+      try {
+        const autoReason =
+          doc.reason?.trim() ||
+          `Shortage fulfilled from Indent ${doc.indentNumber || doc.requestNo}`;
+        const autoRemark = `Auto-generated Issue for Requester Indent ${doc.indentNumber || doc.requestNo} (Qty: ${params.qty})`;
+
+        issueResult = await this.issueService.createDraftBulk({
+          createdBy: reqId,
+          reason: autoReason,
+          remark: autoRemark,
+          lines: [
+            {
+              itemId: String(doc.itemId),
+              requestedQty: params.qty,
+            },
+          ],
+        });
+        console.log(
+          `[AutoIssue] Successfully auto-created Issue Request ${issueResult?.issNo} for Requester ${reqId} from Received Indent ${doc.indentNumber}`,
+        );
+
+        if (issueResult?._id) {
+          doc.sourceIssueId = String(issueResult._id);
+          doc.timeline.push({
+            action: 'AUTO_ISSUED',
+            title: `Auto-Reserved for Requester (${issueResult.issNo})`,
+            description: `Auto-reserved ${params.qty} units for ${doc.requestedBy || 'requester'} under Issue Request ${issueResult.issNo}`,
+            actorName: 'System Automation',
+            timestamp: new Date(),
+          });
+          await doc.save();
+        }
+      } catch (err: any) {
+        console.error(
+          `[AutoIssue] Failed to auto-create Issue Request for Requester ${reqId}:`,
+          err?.message || err,
+        );
+        doc.timeline.push({
+          action: 'AUTO_ISSUE_FAILED',
+          title: 'Auto-Reservation Failed',
+          description: `Auto-reservation failed for requester: ${err?.message || err}`,
+          actorName: 'System Automation',
+          timestamp: new Date(),
+        });
+        await doc.save().catch(() => {});
+      }
+    }
+
+    // Send 2 notifications to requester
+    if (isHumanRequester && this.notificationService) {
+      await this.notificationService.notifyRequesterStockArrivedAndAutoIssued({
+        userId: reqId,
+        itemId: String(doc.itemId),
+        itemName: doc.itemName || doc.itemDescription || 'Requested Item',
+        itemCode: doc.itemCode || '',
+        unit: doc.unitOfMeasure || '',
+        qty: params.qty,
+        indentNo: doc.indentNumber || doc.requestNo || '',
+        issueNo: issueResult?.issNo,
+      });
+    }
+
+    return this.normalizeOutput(doc);
+  }
+
+  /**
+   * Rejects an indent request.
+   * DATA SAFETY: Rejection strictly does NOT modify physical inventory.
+   */
+  async reject(id: string, dto: ReviewIndentRaiseDto, user: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    if (doc.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Cannot reject indent. Current status is already ${doc.status}`,
+      );
+    }
+
+    const now = new Date();
+    doc.status = 'REJECTED';
+    doc.reviewedBy = user?.name || user?.email || 'Store Approver';
+    doc.reviewedById = (user?._id || user?.uid || '').toString();
+    doc.reviewedAt = now;
+    doc.lastChangedOn = now;
+    if (dto?.reviewRemarks) {
+      doc.reviewRemarks = dto.reviewRemarks.trim();
+    }
+
+    doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+    doc.timeline.push({
+      action: 'REJECTED',
+      title: 'Indent Rejected',
+      description: dto?.reviewRemarks
+        ? dto.reviewRemarks.trim()
+        : 'Indent request was rejected by approver',
+      actorName: user?.name || user?.email || 'Store Approver',
+      timestamp: now,
+    });
+
+    // DATA SAFETY: Rejection does NOT modify inventory.
+    const saved = await doc.save();
+    return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Updates requested quantity on a PENDING indent.
+   * Also updates defaultRefillQuantity on the item master to maintain desired auto-refill sizing.
+   */
+  async updateQuantity(id: string, dto: UpdateIndentQtyDto, user?: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    const isPending = doc.status === 'PENDING';
+    const isApprovedUncredited =
+      doc.status === 'APPROVED' && !doc.stockCredited;
+
+    if (!isPending && !isApprovedUncredited) {
+      throw new BadRequestException(
+        `Cannot edit indent quantity. Current status is ${doc.status}${doc.stockCredited ? ' (stock already credited into warehouse)' : ''}.`,
+      );
+    }
+
+    const rawQty = dto.indentQty ?? dto.requestedQty;
+    const newQty = Number(rawQty);
+    if (!rawQty || isNaN(newQty) || newQty < 1) {
+      throw new BadRequestException(
+        'Indent quantity must be a positive number of at least 1',
+      );
+    }
+
+    // Capacity validation against item maxCapacity
+    if (doc.itemId) {
+      const item = await this.itemModel.findById(doc.itemId);
+      if (item) {
+        const maxCap =
+          typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+            ? item.maxCapacity
+            : typeof (item as any).maxQuantity === 'number' &&
+                (item as any).maxQuantity > 0
+              ? (item as any).maxQuantity
+              : 0;
+        const avail =
+          typeof item.stockAvailableQuantity === 'number'
+            ? item.stockAvailableQuantity
+            : 0;
+
+        if (maxCap > 0 && avail + newQty > maxCap) {
+          const maxAllowed = Math.max(0, maxCap - avail);
+          throw new BadRequestException(
+            `Cannot increase indent quantity to ${newQty}. Available stock is ${avail} and maximum capacity is ${maxCap}. You can only indent up to ${maxAllowed} units.`,
+          );
+        }
+      }
+    }
+
+    const oldQty = doc.indentQty || doc.requestedQty || 0;
+    doc.indentQty = newQty;
+    doc.requestedQty = newQty;
+    doc.lastChangedOn = new Date();
+
+    if (dto.reason && dto.reason.trim()) {
+      doc.reason = dto.reason.trim();
+    }
+
+    doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+
+    if (isApprovedUncredited) {
+      // Approach 1: Move back to PENDING so the approver re-authorizes the amended quantity
+      doc.status = 'PENDING';
+      doc.timeline.push({
+        action: 'AMENDMENT_REQUESTED',
+        title: 'Quantity Increase Requested (Re-approval Required)',
+        description: `Approved quantity amended from ${oldQty} to ${newQty} ${doc.unitOfMeasure || 'units'}${dto.reason ? ' (' + dto.reason.trim() + ')' : ''}. Requires re-approval.`,
+        actorName: user?.name || user?.email || 'Store User',
+        timestamp: new Date(),
+      });
+    } else {
+      doc.timeline.push({
+        action: 'QTY_EDITED',
+        title: 'Quantity Adjusted',
+        description: `Quantity adjusted from ${oldQty} to ${newQty} ${doc.unitOfMeasure || 'units'}${dto.reason ? ' (' + dto.reason.trim() + ')' : ''}`,
+        actorName: user?.name || user?.email || 'Store User',
+        timestamp: new Date(),
+      });
+    }
+
+    const saved = await doc.save();
+
+    // Persist this quantity as defaultRefillQuantity on the item for all future auto-refills
+    if (doc.itemId) {
+      await this.itemModel.findByIdAndUpdate(doc.itemId, {
+        $set: { defaultRefillQuantity: newQty },
+      });
+    }
+
+    return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Deletes an uncredited indent request from the system.
+   */
+  async delete(id: string, user?: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent record not found');
+    }
+    if (doc.stockCredited) {
+      throw new BadRequestException(
+        'Cannot delete an indent that has already been credited to stock.',
+      );
+    }
+    await this.indentModel.findByIdAndDelete(id);
+    return {
+      success: true,
+      id,
+      msg: `Indent ${doc.indentNumber || doc.requestNo} deleted successfully`,
+    };
+  }
+
+  async pushTimelineEvent(
+    indentId: string,
+    event: { action: string; title: string; description: string; actorName?: string },
+  ): Promise<void> {
+    if (!indentId || !Types.ObjectId.isValid(indentId)) return;
+    try {
+      const doc = await this.indentModel.findById(indentId);
+      if (!doc) return;
+      doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+      doc.timeline.push({
+        action: event.action,
+        title: event.title,
+        description: event.description,
+        actorName: event.actorName || 'System',
+        timestamp: new Date(),
+      });
+      await doc.save();
+    } catch (err) {
+      console.error('[StockRefillRequestService] pushTimelineEvent error:', err);
+    }
+  }
+
+
+  /**
+   * Normalizes document output to guarantee both reference fields and legacy fields
+   * are populated, whether reading existing historical records or newly created indents.
+   */
+  private normalizeOutput(rawDoc: any): any {
+    const obj = rawDoc.toObject ? rawDoc.toObject() : { ...rawDoc };
+    const id = (obj._id || obj.id || '').toString();
+    const indentNum = obj.indentNumber || obj.requestNo || '';
+    const desc = obj.itemDescription || obj.itemName || '';
+    const unitVal = obj.unitOfMeasure || obj.unit || '';
+    const qtyVal = obj.indentQty ?? obj.requestedQty ?? 0;
+
+    return {
+      ...obj,
+      _id: obj._id,
+      id,
+      indentNumber: indentNum,
+      requestNo: indentNum,
+      itemDescription: desc,
+      itemName: obj.itemName || desc,
+      unitOfMeasure: unitVal,
+      unit: unitVal,
+      indentQty: qtyVal,
+      requestedQty: qtyVal,
+      make: obj.make ?? '',
+      techSpec: obj.techSpec ?? '',
+      lineNumber: obj.lineNumber ?? 1,
+      createdOn: obj.createdOn || obj.createdAt || new Date(),
+      lastChangedOn: obj.lastChangedOn || obj.updatedAt || new Date(),
+      preReqQty: obj.preReqQty ?? 0,
+      preqQty: obj.preqQty ?? 0,
+      balanceQty: obj.balanceQty ?? obj.currentAvailableQty ?? 0,
+      documentCategory: obj.documentCategory || 'ITEM_MASTER',
+      company: obj.company || 'STORE',
+      costCenter: obj.costCenter || 'MAIN_STORE',
+      documentDate: obj.documentDate || obj.createdOn || obj.createdAt || new Date(),
+      documentType: obj.documentType || 'INDENT',
+      requestedBy: obj.requestedBy || '',
+      hsnCode: obj.hsnCode ?? '',
+      indentType: obj.indentType || (
+        (obj.requestedBy || '').toUpperCase().includes('AUTO REFILL') ||
+        (obj.requestedBy || '').toUpperCase().includes('SYSTEM')
+          ? 'AUTO_REFILL'
+          : (obj.reason || '').toUpperCase().includes('SHORTAGE')
+            ? 'ISSUE_SHORTAGE'
+            : 'STORE_REFILL'
+      ),
+      sourceIssueId: obj.sourceIssueId || '',
+      status: (obj.status || 'PENDING').toUpperCase(),
+      stockCredited: obj.stockCredited === true,
+      stockCreditedAt: obj.stockCreditedAt || null,
+      creditedRackId: obj.creditedRackId || '',
+      creditedRackCode: obj.creditedRackCode || '',
+      creditedQty: obj.creditedQty ?? null,
+      receiveDocId: obj.receiveDocId || '',
+      timeline:
+        Array.isArray(obj.timeline) && obj.timeline.length > 0
+          ? obj.timeline
+          : [
+              {
+                action: 'CREATED',
+                title: 'Indent Raised',
+                description: obj.reason
+                  ? `Requested: ${obj.reason}`
+                  : `Indent requisition created for ${qtyVal} ${unitVal}`,
+                actorName: obj.requestedBy || 'Store User',
+                timestamp: obj.createdOn || obj.createdAt || new Date(),
+              },
+              ...(obj.reviewedAt || (obj.status && obj.status.toUpperCase() === 'APPROVED')
+                ? [
+                    {
+                      action: 'APPROVED',
+                      title: 'Indent Approved',
+                      description:
+                        obj.reviewRemarks ||
+                        'Approved for warehouse receiving',
+                      actorName: obj.reviewedBy || 'Store Approver',
+                      timestamp:
+                        obj.reviewedAt || obj.lastChangedOn || new Date(),
+                    },
+                  ]
+                : []),
+              ...(obj.status && obj.status.toUpperCase() === 'REJECTED'
+                ? [
+                    {
+                      action: 'REJECTED',
+                      title: 'Indent Rejected',
+                      description:
+                        obj.reviewRemarks || 'Indent request rejected',
+                      actorName: obj.reviewedBy || 'Store Approver',
+                      timestamp:
+                        obj.reviewedAt || obj.lastChangedOn || new Date(),
+                    },
+                  ]
+                : []),
+              ...(obj.stockCredited || obj.receiveDocId
+                ? [
+                    {
+                      action: 'RECEIVED',
+                      title: 'Stock Received & Putaway',
+                      description: `Received ${obj.creditedQty || qtyVal} into rack ${obj.creditedRackCode || 'Rack'}`,
+                      actorName: 'Store Operator',
+                      timestamp:
+                        obj.stockCreditedAt || obj.lastChangedOn || new Date(),
+                    },
+                  ]
+                : []),
+            ],
+    };
+  }
+
+  // =========================================================================
+  // Indent Drafts (Unsubmitted Holding Area with Real-Time Stock)
+  // =========================================================================
+
+  /**
+   * Retrieves all unsubmitted indent-ready items for the specified user,
+   * enriched with authoritative real-time inventory levels from StoreNewItem.
+   */
+  async getDrafts(userId: string) {
+    if (!userId) return [];
+
+    const draft = await this.indentDraftModel
+      .findOne({ userId })
+      .lean()
+      .exec();
+
+    if (!draft || !draft.items || draft.items.length === 0) {
+      return [];
+    }
+
+    const itemIds = draft.items
+      .map((i) => i.itemId)
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const masterDocs = await this.itemModel
+      .find({ _id: { $in: itemIds } })
+      .select(
+        'itemName itemCode unit imageUrl stockAvailableQuantity totalStockQuantity minStockQuantity maxCapacity maxQuantity',
+      )
+      .lean()
+      .exec();
+
+    const masterMap = new Map<string, any>(
+      masterDocs.map((doc: any) => [String(doc._id), doc]),
+    );
+
+    return draft.items.map((i) => {
+      const m = masterMap.get(i.itemId);
+      const avail =
+        typeof m?.stockAvailableQuantity === 'number'
+          ? m.stockAvailableQuantity
+          : 0;
+      const total =
+        typeof m?.totalStockQuantity === 'number'
+          ? m.totalStockQuantity
+          : 0;
+
+      return {
+        itemId: i.itemId,
+        itemName: m?.itemName || i.itemName || 'Store Item',
+        itemCode: m?.itemCode || i.itemCode || '',
+        unit: m?.unit || i.unit || 'PCS',
+        imageUrl: m?.imageUrl || i.imageUrl || '',
+        quantity: i.quantity,
+        reason: i.reason || '',
+        addedAt: i.addedAt,
+        realTimeAvailableQty: avail,
+        realTimeTotalQty: total,
+        minStockQuantity: m?.minStockQuantity ?? 0,
+        isRestocked: avail >= i.quantity,
+      };
+    });
+  }
+
+  /**
+   * Adds or updates unsubmitted items in the requester's indent draft holding area.
+   */
+  async addDraftItems(userId: string, items: AddIndentDraftItemDto[]) {
+    if (!userId || !items || items.length === 0) {
+      return this.getDrafts(userId);
+    }
+
+    let draft = await this.indentDraftModel.findOne({ userId }).exec();
+    if (!draft) {
+      draft = new this.indentDraftModel({ userId, items: [] });
+    }
+
+    for (const it of items) {
+      if (!it.itemId) continue;
+      const existingIdx = draft.items.findIndex((x) => x.itemId === it.itemId);
+      if (existingIdx >= 0) {
+        draft.items[existingIdx].quantity += it.quantity;
+        if (it.reason) draft.items[existingIdx].reason = it.reason;
+        draft.items[existingIdx].addedAt = new Date();
+      } else {
+        (draft.items as any).push({
+          itemId: it.itemId,
+          itemName: it.itemName || '',
+          itemCode: it.itemCode || '',
+          unit: it.unit || 'PCS',
+          imageUrl: it.imageUrl || '',
+          quantity: it.quantity,
+          reason: it.reason || '',
+          addedAt: new Date(),
+        });
+      }
+    }
+
+    await draft.save();
+    return this.getDrafts(userId);
+  }
+
+  /**
+   * Updates quantity or reason for a single item in the draft list.
+   */
+  async updateDraftItemQty(
+    userId: string,
+    itemId: string,
+    dto: UpdateIndentDraftItemDto,
+  ) {
+    if (!userId || !itemId) {
+      throw new BadRequestException('User ID and Item ID are required');
+    }
+
+    const draft = await this.indentDraftModel.findOne({ userId }).exec();
+    if (!draft) {
+      throw new NotFoundException('No draft items found for user');
+    }
+
+    const idx = draft.items.findIndex((x) => x.itemId === itemId);
+    if (idx < 0) {
+      throw new NotFoundException('Draft item not found');
+    }
+
+    if (dto.quantity <= 0) {
+      (draft.items as any).splice(idx, 1);
+    } else {
+      draft.items[idx].quantity = dto.quantity;
+      if (dto.reason !== undefined) {
+        draft.items[idx].reason = dto.reason;
+      }
+      draft.items[idx].addedAt = new Date();
+    }
+
+    await draft.save();
+    return this.getDrafts(userId);
+  }
+
+  /**
+   * Removes a single item from the requester's draft list.
+   */
+  async removeDraftItem(userId: string, itemId: string) {
+    if (!userId || !itemId) return [];
+
+    const draft = await this.indentDraftModel.findOne({ userId }).exec();
+    if (draft) {
+      draft.items = draft.items.filter((x) => x.itemId !== itemId) as any;
+      await draft.save();
+    }
+
+    return this.getDrafts(userId);
+  }
+
+  /**
+   * Clears all unsubmitted draft items for the user.
+   */
+  async clearDrafts(userId: string) {
+    if (!userId) return [];
+    await this.indentDraftModel.deleteOne({ userId }).exec();
+    return [];
+  }
+
+  /**
+   * Combines multiple indent-ready draft items and submits them as ONE single Indent Requisition.
+   * Status moves to PENDING (Approval Pending).
+   */
+  async submitCombined(
+    userId: string,
+    dto: SubmitCombinedIndentDto,
+    user: any,
+  ) {
+    if (!userId) {
+      throw new BadRequestException('Missing user authentication');
+    }
+
+    const draft = await this.indentDraftModel.findOne({ userId }).exec();
+    if (!draft || !draft.items || draft.items.length === 0) {
+      throw new BadRequestException(
+        'No indent-ready draft items available to submit',
+      );
+    }
+
+    const toSubmit =
+      dto.itemIds && dto.itemIds.length > 0
+        ? draft.items.filter((i) => dto.itemIds!.includes(i.itemId))
+        : [...draft.items];
+
+    if (toSubmit.length === 0) {
+      throw new BadRequestException(
+        'None of the specified items were found in your draft list',
+      );
+    }
+
+    // Generate single master indent reference number for this combined requisition
+    const baseIndentNumber = await this.generateIndentNumber();
+
+    const itemIds = toSubmit
+      .map((i) => i.itemId)
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const masters = await this.itemModel.find({ _id: { $in: itemIds } }).exec();
+    const masterMap = new Map<string, any>(masters.map((m: any) => [String(m._id), m]));
+
+    const requestedBy = user?.name || user?.email || 'Store User';
+    const requesterId = (user?._id || user?.uid || userId).toString();
+    const now = new Date();
+
+    const createdDocs: IndentRaiseDocument[] = [];
+
+    try {
+      for (let i = 0; i < toSubmit.length; i++) {
+        const draftItem = toSubmit[i];
+        const m = masterMap.get(draftItem.itemId);
+        const lineNumber = i + 1;
+        const indentNumber =
+          i === 0 ? baseIndentNumber : await this.generateIndentNumber();
+
+        const avail =
+          typeof m?.stockAvailableQuantity === 'number'
+            ? m.stockAvailableQuantity
+            : 0;
+        const total =
+          typeof m?.totalStockQuantity === 'number' ? m.totalStockQuantity : 0;
+
+        const maxQty =
+          typeof m?.maxCapacity === 'number' && m.maxCapacity > 0
+            ? m.maxCapacity
+            : typeof (m as any)?.maxQuantity === 'number' && (m as any).maxQuantity > 0
+              ? (m as any).maxQuantity
+              : 0;
+
+        if (maxQty > 0) {
+          const currentStock = Math.max(0, avail);
+          if (currentStock >= maxQty) {
+            throw new BadRequestException(
+              `Cannot submit combined indent: Material "${m?.itemName || draftItem.itemName}" has reached its maximum quantity of ${maxQty} (Current stock: ${currentStock}).`,
+            );
+          }
+          if (currentStock + draftItem.quantity > maxQty) {
+            throw new BadRequestException(
+              `Cannot submit combined indent: Material "${m?.itemName || draftItem.itemName}" requested quantity (${draftItem.quantity}) exceeds maximum quantity of ${maxQty}. Current stock: ${currentStock}. Maximum allowable indent is ${maxQty - currentStock}.`,
+            );
+          }
+        }
+
+        const itemCode = (m?.itemCode || draftItem.itemCode || '').trim();
+        const itemName = (m?.itemName || draftItem.itemName || '').trim();
+        const itemDesc = (m?.description || itemName).trim() || itemName;
+        const unit = (m?.unit || draftItem.unit || 'PCS').trim();
+
+        const doc = new this.indentModel({
+          indentType: ((draftItem as any).indentType || '').trim() || 'ISSUE_SHORTAGE',
+          indentNumber,
+          groupIndentNumber: baseIndentNumber,
+          itemCode,
+          itemDescription: itemDesc,
+          make: '',
+          techSpec: '',
+          unitOfMeasure: unit,
+          lineNumber,
+          createdOn: now,
+          lastChangedOn: now,
+          indentQty: draftItem.quantity,
+          preReqQty: 0,
+          preqQty: 0,
+          balanceQty: avail,
+          documentCategory: 'ITEM_MASTER',
+          company: dto.company || 'STORE',
+          costCenter: dto.costCenter || 'MAIN_STORE',
+          documentDate: now,
+          documentType: 'INDENT',
+          requestedBy,
+          hsnCode: '',
+
+          itemId: (m?._id ||
+            (Types.ObjectId.isValid(draftItem.itemId)
+              ? new Types.ObjectId(draftItem.itemId)
+              : new Types.ObjectId())) as any,
+          requesterId,
+          status: this.storeCartService?.isIndentApprovalRequired() ? 'PENDING' : 'APPROVED',
+          reason:
+            (draftItem.reason || dto.reason || '').trim() ||
+            'Requester Indent (Stock Shortfall)',
+          currentAvailableQty: avail,
+          currentTotalQty: total,
+          timeline: [
+            {
+              action: 'CREATED',
+              title: 'Indent Raised',
+              description: this.storeCartService?.isIndentApprovalRequired()
+                ? 'Submitted in combined requisition for approval'
+                : 'Auto-approved in combined requisition (Indent approval disabled)',
+              actorName: requestedBy,
+              timestamp: now,
+            },
+            ...(this.storeCartService?.isIndentApprovalRequired()
+              ? []
+              : [
+                  {
+                    action: 'APPROVED',
+                    title: 'Auto-Approved',
+                    description: 'Directly available in Receive section',
+                    actorName: 'System Settings',
+                    timestamp: now,
+                  },
+                ]),
+          ],
+
+          // Legacy compatibility mirrors
+          requestNo: indentNumber,
+          itemName,
+          unit,
+          requestedQty: draftItem.quantity,
+        });
+
+        const saved = await doc.save();
+        createdDocs.push(saved);
+      }
+
+      // Remove submitted items from draft holding list
+      const submittedIds = new Set(toSubmit.map((i) => i.itemId));
+      draft.items = draft.items.filter((i) => !submittedIds.has(i.itemId)) as any;
+      await draft.save();
+
+      return {
+        groupIndentNumber: baseIndentNumber,
+        submittedCount: createdDocs.length,
+        indents: createdDocs.map((d) => this.normalizeOutput(d)),
+      };
+    } catch (err: any) {
+      console.error('[SubmitCombined] Error submitting combined indents:', err);
+      throw err;
+    }
+  }
+}
+
+// Backward compatibility alias for existing module injection and imports
+export { IndentRaiseService as StockRefillRequestService };
