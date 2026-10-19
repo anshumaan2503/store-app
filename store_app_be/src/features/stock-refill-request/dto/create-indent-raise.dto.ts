@@ -199,3 +199,27 @@ export class UpdateIndentQtyDto {
   reason?: string;
 }
 
+export class ConsolidatedStoreApproveItemDto {
+  @IsNotEmpty()
+  @IsString()
+  indentId: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  @Min(0)
+  approvedQty: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+}
+
+export class ConsolidatedStoreApproveDto {
+  @IsNotEmpty()
+  items: ConsolidatedStoreApproveItemDto[];
+
+  @IsOptional()
+  @IsString()
+  overallRemarks?: string;
+}
+

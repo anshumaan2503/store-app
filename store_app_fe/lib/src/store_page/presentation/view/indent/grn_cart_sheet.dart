@@ -793,14 +793,16 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
                   onPressed: isSubmitting
                       ? null
                       : () async {
-                          final ok = await ref
+                          final nav = Navigator.of(context);
+                          final grn = await ref
                               .read(storeGrnControllerProvider.notifier)
                               .submitGrn(
                                 base64Image: _pickedImageBase64,
                                 remarks: _remarksCtrl.text.trim(),
+                                autoApprove: true,
                               );
-                          if (ok && mounted) {
-                            Navigator.of(context).pop();
+                          if (grn != null && mounted) {
+                            nav.pop();
                           }
                         },
                   icon: isSubmitting
@@ -812,14 +814,14 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.send_rounded, size: 20),
+                      : const Icon(Icons.check_circle_outline_rounded, size: 20),
                   label: Flexible(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         isSubmitting
-                            ? 'Submitting GRN...'
-                            : 'Submit GRN for Approval (${cart.length} items)',
+                            ? 'Approving GRN...'
+                            : 'Approve GRN (${cart.length} items)',
                         style: const TextStyle(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w700,

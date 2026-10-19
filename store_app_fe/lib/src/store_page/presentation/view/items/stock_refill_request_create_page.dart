@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../auth/controllers/users_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../../../domains/models/stock_refill_request_model.dart';
 import '../../../controllers/stock_refill_request_controller.dart';
@@ -13,7 +14,6 @@ const _ink600 = Color(0xFF867471);
 const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFFFF4E2);
 const _stroke = Color(0xFFDFE1D6);
-const _accentMint = Color(0xFFB6D3CC);
 
 typedef IndentRaiseCreatePage = StockRefillRequestCreatePage;
 
@@ -448,8 +448,8 @@ class _StockRefillRequestCreatePageState
           const SizedBox(height: 6),
           Text(
             isPending
-                ? 'A refill indent for ${activeIndent.indentQty} ${widget.item.unit} has already been raised for this item. Under the One Indent Rule, you can edit the existing quantity instead of creating a duplicate request.'
-                : 'An order for ${activeIndent.indentQty} ${widget.item.unit} is approved and awaiting delivery. You can amend / increase the quantity on this indent if additional units are needed.',
+                ? 'An indent for ${activeIndent.indentQty} ${widget.item.unit} has already been raised for this item. You can edit the existing quantity or submit a separate indent below.'
+                : 'An indent for ${activeIndent.indentQty} ${widget.item.unit} is approved and in-transit. You can amend it or submit an additional indent below.',
             style: const TextStyle(
                 fontSize: 12.5, color: _ink700, height: 1.35),
           ),
@@ -482,13 +482,6 @@ class _StockRefillRequestCreatePageState
 
   Future<void> _submit() async {
     if (_submitting) return;
-
-    final activeIndent =
-        ref.read(activeIndentForItemProvider(widget.item.id)).valueOrNull;
-    if (activeIndent != null) {
-      _openEditQtyDialog(activeIndent);
-      return;
-    }
 
     if (!_formKey.currentState!.validate()) return;
 
@@ -594,10 +587,19 @@ class _StockRefillRequestCreatePageState
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = ref.watch(userFindOneDataStreamProvider).valueOrNull;
     final activeIndentAsync =
         ref.watch(activeIndentForItemProvider(widget.item.id));
     final activeIndent = activeIndentAsync.valueOrNull;
-    final hasActiveIndent = activeIndent != null;
+    final isMyIndent = activeIndent != null &&
+        (currentUser == null ||
+            activeIndent.requesterId == currentUser.uid ||
+            (currentUser.name.trim().isNotEmpty &&
+                activeIndent.requestedBy.trim().toLowerCase() ==
+                    currentUser.name.trim().toLowerCase()) ||
+            (currentUser.phoneNumber.trim().isNotEmpty &&
+                activeIndent.requestedBy.trim().contains(currentUser.phoneNumber.trim())));
+    final hasActiveIndent = isMyIndent;
 
     final item = widget.item;
     final isOut = item.stockAvailableQuantity <= 0;
@@ -1051,17 +1053,13 @@ class _StockRefillRequestCreatePageState
                               ),
                             ],
                             decoration: InputDecoration(
-                              hintText: hasActiveIndent
-                                  ? (activeIndent.isPending
-                                      ? 'Indent pending: Use button below to edit quantity'
-                                      : 'Indent in-transit: Use button below to amend')
-                                  : hasMaxLimit
-                                      ? (isMaxReached
-                                          ? 'Maximum quantity reached ($maxQty)'
-                                          : 'Enter indent quantity (Max allowed: $remainingAllowed ${item.unit})')
-                                      : 'Enter indent quantity needed (e.g. 50)',
+                              hintText: hasMaxLimit
+                                  ? (isMaxReached
+                                      ? 'Maximum quantity reached ($maxQty)'
+                                      : 'Enter indent quantity (Max allowed: $remainingAllowed ${item.unit})')
+                                  : 'Enter indent quantity needed (e.g. 50)',
                               helperText: hasActiveIndent
-                                  ? 'Active indent ${activeIndent.indentNumber.isNotEmpty ? activeIndent.indentNumber : activeIndent.requestNo} already covers this item (${activeIndent.indentQty} ${item.unit}).'
+                                  ? 'Active indent ${activeIndent.indentNumber.isNotEmpty ? activeIndent.indentNumber : activeIndent.requestNo} already exists (${activeIndent.indentQty} ${item.unit}). You can raise an additional indent below or edit the existing one.'
                                   : hasMaxLimit && !isMaxReached
                                       ? 'Max limit: $maxQty ${item.unit}. You can indent up to $remainingAllowed ${item.unit}.'
                                       : null,
@@ -1083,7 +1081,7 @@ class _StockRefillRequestCreatePageState
                                 fontWeight: FontWeight.w700,
                               ),
                               filled: true,
-                              fillColor: (isMaxReached || hasActiveIndent)
+                              fillColor: isMaxReached
                                   ? const Color(0xFFEEEEEE)
                                   : const Color(0xFFFAF8F0),
                               border: OutlineInputBorder(
@@ -1106,7 +1104,7 @@ class _StockRefillRequestCreatePageState
                                 vertical: 12,
                               ),
                             ),
-                            enabled: !isMaxReached && !hasActiveIndent,
+                            enabled: !isMaxReached,
                             validator: (val) {
                               final trimmed = val?.trim() ?? '';
                               if (trimmed.isEmpty) {
@@ -1401,94 +1399,53 @@ class _StockRefillRequestCreatePageState
                     ),
                     const SizedBox(height: 20),
 
-                    // Submit or Edit/Amend Button
-                    if (hasActiveIndent)
-                      ElevatedButton(
-                        onPressed: () => _openEditQtyDialog(activeIndent),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: activeIndent.isPending
-                              ? const Color(0xFFE65100)
-                              : const Color(0xFF1565C0),
-                          foregroundColor: _surface,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          elevation: 2,
+                    // Submit Button
+                    ElevatedButton(
+                      onPressed: (_submitting || isMaxReached) ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isMaxReached ? Colors.grey : _ink900,
+                        foregroundColor: _surface,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              activeIndent.isPending
-                                  ? Icons.edit_note_rounded
-                                  : Icons.add_shopping_cart_rounded,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                activeIndent.isPending
-                                    ? 'Indent Already Pending — Edit Quantity'
-                                    : 'Indent In-Transit — Amend / Increase Quantity',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                        elevation: 2,
+                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: Colors.white,
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      ElevatedButton(
-                        onPressed: (_submitting || isMaxReached) ? null : _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isMaxReached ? Colors.grey : _ink900,
-                          foregroundColor: _surface,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          elevation: 2,
-                        ),
-                        child: _submitting
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.2,
-                                  color: Colors.white,
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  isMaxReached
+                                      ? Icons.block_rounded
+                                      : Icons.send_rounded,
+                                  size: 18,
                                 ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
                                     isMaxReached
-                                        ? Icons.block_rounded
-                                        : Icons.send_rounded,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      isMaxReached
-                                          ? 'Maximum Quantity Reached — Cannot Indent'
-                                          : 'Submit Indent Request',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.w800,
-                                      ),
+                                        ? 'Maximum Quantity Reached — Cannot Indent'
+                                        : 'Submit Indent Request',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                ],
-                              ),
-                      ),
+                                ),
+                              ],
+                            ),
+                    ),
                   ],
                 ),
               ),

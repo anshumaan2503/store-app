@@ -85,6 +85,13 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
             "Store Scanner",
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
+          actions: [
+            IconButton(
+              tooltip: "Select / Enter Rack ID (Web / Manual)",
+              icon: const Icon(Icons.keyboard_outlined),
+              onPressed: _manualRackInput,
+            ),
+          ],
         ),
 
         floatingActionButton: ValueListenableBuilder<MobileScannerState>(
@@ -182,6 +189,57 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
         );
       },
     );
+  }
+
+  Future<void> _manualRackInput() async {
+    final ctrl = TextEditingController(text: '69c6287b9827412ba0bc8b6b');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter Rack ID (Web / Testing)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter Rack Database ID or Scanned String (e.g. 69c6287b9827412ba0bc8b6b or P0041.<rackId>):',
+              style: TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Rack Database ID',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Open Rack Putaway'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      if (result.contains('.')) {
+        await _handleScannedValue(result);
+      } else {
+        await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ScanRackReceivePage(rackId: result),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleScannedValue(String rawValue) async {

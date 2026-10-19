@@ -169,10 +169,40 @@ export class IndentRaise {
    */
   @Prop({
     default: 'PENDING',
-    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    enum: ['PENDING', 'DEPT_APPROVED', 'APPROVED', 'REJECTED'],
     index: true,
   })
   status: string;
+
+  /**
+   * Department approval tracking
+   */
+  @Prop()
+  deptApprovedAt?: Date;
+
+  @Prop({ default: '' })
+  deptApprovedBy?: string;
+
+  @Prop({ default: '' })
+  deptApprovedById?: string;
+
+  /**
+   * Store consolidation & approval tracking
+   */
+  @Prop()
+  storeApprovedAt?: Date;
+
+  @Prop({ default: '' })
+  storeApprovedBy?: string;
+
+  @Prop({ default: '' })
+  storeApprovedById?: string;
+
+  /**
+   * Original quantity requested before Store auto-adjustment/capping
+   */
+  @Prop({ default: 0 })
+  originalIndentQty?: number;
 
   /**
    * Review remarks provided upon approval or rejection.

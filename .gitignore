@@ -119,3 +119,6 @@ Desktop.ini
 **/.git_backup/
 *.bak
 *.swp
+
+# Ignored guides / temporary files
+DOCKER_START_GUIDE_old.md

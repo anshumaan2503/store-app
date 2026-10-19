@@ -15,6 +15,7 @@ import {
   CreateIndentRaiseDto,
   ReviewIndentRaiseDto,
   UpdateIndentQtyDto,
+  ConsolidatedStoreApproveDto,
 } from './dto/create-indent-raise.dto';
 import {
   AddIndentDraftBatchDto,
@@ -186,6 +187,39 @@ export class IndentRaiseController {
     const data = await this.service.getIndentReadyItems();
     return {
       status: true,
+      data,
+    };
+  }
+
+  @Get('pending-store-consolidation')
+  @Permissions(
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storreceiveadd',
+    'storeadmin',
+  )
+  async getPendingStoreConsolidation(@Query('search') search?: string) {
+    const data = await this.service.getPendingStoreConsolidation(search);
+    return {
+      status: true,
+      data,
+    };
+  }
+
+  @Post('consolidated-store-approve')
+  @Permissions(
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storeadmin',
+  )
+  async consolidatedStoreApprove(
+    @Body() dto: ConsolidatedStoreApproveDto,
+    @Req() req: any,
+  ) {
+    const data = await this.service.consolidatedStoreApprove(dto, req.user);
+    return {
+      status: true,
+      msg: data.message,
       data,
     };
   }

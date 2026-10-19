@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/controllers/users_controller.dart';
 import '../domains/models/stock_refill_request_model.dart';
 import '../domains/repositories/stock_refill_request_repository.dart';
 
@@ -58,6 +59,7 @@ final activeIndentForItemProvider = FutureProvider.autoDispose
     .family<StockRefillRequestModel?, String>((ref, itemId) async {
   if (itemId.trim().isEmpty) return null;
   final repository = ref.watch(stockRefillRequestRepositoryProvider);
+  final currentUser = ref.watch(userFindOneDataStreamProvider).valueOrNull;
 
   // 1. Check for PENDING indent
   final resPending = await repository.getRefillRequests(
@@ -66,6 +68,19 @@ final activeIndentForItemProvider = FutureProvider.autoDispose
   );
   final pendingList = resPending.getOrElse((_) => []);
   if (pendingList.isNotEmpty) {
+    if (currentUser != null) {
+      final myPending = pendingList.where((ind) =>
+          ind.requesterId == currentUser.uid ||
+          (currentUser.name.trim().isNotEmpty &&
+              ind.requestedBy.trim().toLowerCase() ==
+                  currentUser.name.trim().toLowerCase()) ||
+          (currentUser.phoneNumber.trim().isNotEmpty &&
+              ind.requestedBy.trim().contains(currentUser.phoneNumber.trim())));
+      if (myPending.isNotEmpty) {
+        return myPending.first;
+      }
+      return null;
+    }
     return pendingList.first;
   }
 
@@ -77,10 +92,46 @@ final activeIndentForItemProvider = FutureProvider.autoDispose
   );
   final approvedList = resApproved.getOrElse((_) => []);
   if (approvedList.isNotEmpty) {
+    if (currentUser != null) {
+      final myApproved = approvedList.where((ind) =>
+          ind.requesterId == currentUser.uid ||
+          (currentUser.name.trim().isNotEmpty &&
+              ind.requestedBy.trim().toLowerCase() ==
+                  currentUser.name.trim().toLowerCase()) ||
+          (currentUser.phoneNumber.trim().isNotEmpty &&
+              ind.requestedBy.trim().contains(currentUser.phoneNumber.trim())));
+      if (myApproved.isNotEmpty) {
+        return myApproved.first;
+      }
+      return null;
+    }
     return approvedList.first;
   }
 
   return null;
+});
+
+final storeConsolidationSearchProvider = StateProvider<String>((ref) => '');
+
+final pendingStoreConsolidationProvider =
+    FutureProvider.autoDispose<List<ConsolidatedStoreItemModel>>((ref) async {
+  final repository = ref.watch(stockRefillRequestRepositoryProvider);
+  final search = ref.watch(storeConsolidationSearchProvider);
+  final res = await repository.getPendingStoreConsolidation(search: search);
+  return res.fold(
+    (l) => throw l.message,
+    (r) => r,
+  );
+});
+
+final pendingStoreConsolidationCountProvider =
+    FutureProvider.autoDispose<int>((ref) async {
+  final repository = ref.watch(stockRefillRequestRepositoryProvider);
+  final res = await repository.getPendingStoreConsolidation();
+  return res.fold(
+    (l) => 0,
+    (r) => r.length,
+  );
 });
 
 final stockRefillRequestControllerProvider =
@@ -310,6 +361,8 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
         state = const AsyncValue.data(null);
         _ref.invalidate(refillRequestsListProvider);
         _ref.invalidate(pendingRefillRequestsCountProvider);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
         return data;
       },
     );
@@ -330,6 +383,33 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
         _ref.invalidate(refillRequestsListProvider);
         _ref.invalidate(pendingRefillRequestsCountProvider);
         return success;
+      },
+    );
+  }
+
+  Future<bool> consolidatedStoreApprove({
+    required List<Map<String, dynamic>> items,
+    String? overallRemarks,
+  }) async {
+    state = const AsyncValue.loading();
+    final repo = _ref.read(stockRefillRequestRepositoryProvider);
+    final res = await repo.consolidatedStoreApprove(
+      items: items,
+      overallRemarks: overallRemarks,
+    );
+
+    return res.fold(
+      (failure) {
+        state = AsyncValue.error(failure.message, failure.stackTrace);
+        return false;
+      },
+      (data) {
+        state = const AsyncValue.data(null);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
+        _ref.invalidate(refillRequestsListProvider);
+        _ref.invalidate(pendingRefillRequestsCountProvider);
+        return true;
       },
     );
   }

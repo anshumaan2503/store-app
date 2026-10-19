@@ -78,7 +78,14 @@ export class StoreGrnService {
       email: actorUser?.email || dto.submittedBy?.email || '',
     };
 
-    const initialStatus: GrnStatus = isGrnEnabled ? 'PENDING_APPROVAL' : 'APPROVED';
+    const canUserApprove =
+      actorUser?.isSuperAdmin === true ||
+      (Array.isArray(actorUser?.appWorks) &&
+        (actorUser.appWorks.includes('storeadmin') ||
+          actorUser.appWorks.includes('storreceiveapprove')));
+
+    const isAutoApproved = !isGrnEnabled || dto.autoApprove === true || canUserApprove;
+    const initialStatus: GrnStatus = isAutoApproved ? 'APPROVED' : 'PENDING_APPROVAL';
 
     const timeline = [
       {
@@ -90,12 +97,12 @@ export class StoreGrnService {
       },
     ];
 
-    if (!isGrnEnabled) {
+    if (isAutoApproved) {
       timeline.push({
-        action: 'GRN_AUTO_APPROVED',
-        title: 'Auto-Approved',
-        description: 'GRN auto-approved as GRN workflow approval toggle is disabled.',
-        actorName: 'System',
+        action: 'GRN_APPROVED',
+        title: 'GRN Approved in Cart',
+        description: `Approved by ${actor.name}. Items are now unlocked for QR scan and rack putaway.`,
+        actorName: actor.name,
         timestamp: new Date(),
       });
     }
@@ -111,8 +118,8 @@ export class StoreGrnService {
       totalValue,
       submittedBy: actor,
       timeline,
-      approvedBy: !isGrnEnabled ? { uid: 'system', name: 'Auto System' } : undefined,
-      approvedAt: !isGrnEnabled ? new Date() : undefined,
+      approvedBy: isAutoApproved ? actor : undefined,
+      approvedAt: isAutoApproved ? new Date() : undefined,
     });
 
     // Update timeline on all associated indents
@@ -120,9 +127,11 @@ export class StoreGrnService {
       if (it.indentId) {
         try {
           await this.refillService.pushTimelineEvent(it.indentId, {
-            action: 'ADDED_TO_GRN',
-            title: `Added to GRN ${grnNumber}`,
-            description: `Physical verification completed. Ordered: ${it.orderedQty}, Verified: ${it.receivedQty} @ ₹${it.unitPrice}/pc. Status: ${initialStatus}`,
+            action: isAutoApproved ? 'GRN_APPROVED' : 'ADDED_TO_GRN',
+            title: isAutoApproved ? `GRN ${grnNumber} Approved` : `Added to GRN ${grnNumber}`,
+            description: isAutoApproved
+              ? `Approved by ${actor.name}. Item ready for QR rack putaway.`
+              : `Physical verification completed. Ordered: ${it.orderedQty}, Verified: ${it.receivedQty} @ ₹${it.unitPrice}/pc. Status: ${initialStatus}`,
             actorName: actor.name,
           });
         } catch (_) {}
@@ -131,6 +140,9 @@ export class StoreGrnService {
 
     if (this.cartGateway?.server) {
       this.cartGateway.server.emit('store:grn:created', grnDoc);
+      if (isAutoApproved) {
+        this.cartGateway.server.emit('store:grn:approved', grnDoc);
+      }
     }
 
     return grnDoc;

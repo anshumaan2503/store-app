@@ -12,6 +12,8 @@ import '../../../controllers/store_cart_controller.dart';
 import '../../../controllers/store_grn_controller.dart';
 import '../indent/grn_cart_sheet.dart';
 import '../indent/grn_detail_approval_sheet.dart';
+import '../indent/store_indent_consolidation_page.dart';
+import 'qr_code_receive.dart/qr_scanner_receive_page.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -67,6 +69,11 @@ class _StockRefillRequestsListViewState
       if (!mounted) return;
 
       if (res != null) {
+        ref.invalidate(pendingStoreConsolidationProvider);
+        ref.invalidate(pendingStoreConsolidationCountProvider);
+        ref.invalidate(refillRequestsListProvider);
+        ref.invalidate(pendingRefillRequestsCountProvider);
+
         final count = (res['data'] is Map ? res['data']['eligibleItemCount'] : null) ?? 0;
         final groupNum = (res['data'] is Map ? res['data']['groupIndentNumber'] : null)?.toString() ?? '';
 
@@ -100,9 +107,34 @@ class _StockRefillRequestsListViewState
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () {
+                  ref.invalidate(pendingStoreConsolidationProvider);
+                  ref.invalidate(pendingStoreConsolidationCountProvider);
+                  Navigator.pop(ctx);
+                },
                 child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
+              if (count > 0)
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1565C0),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    ref.invalidate(pendingStoreConsolidationProvider);
+                    ref.invalidate(pendingStoreConsolidationCountProvider);
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const StoreIndentConsolidationPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.hub_outlined, size: 16),
+                  label: const Text('View Consolidation', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
             ],
           ),
         );
@@ -445,6 +477,7 @@ class _StockRefillRequestsListViewState
     );
   }
 
+  // ignore: unused_element
   void _showGrnListModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1267,6 +1300,15 @@ class _StockRefillRequestsListViewState
         (user?.appWorks.contains('storissueapprove') ?? false) ||
         (user?.appWorks.contains('storeadmin') ?? false);
 
+    final canReceive = user?.isSuperAdmin == true ||
+        (user?.appWorks.contains('storreceiveadd') ?? false) ||
+        (user?.appWorks.contains('storreceivetostock') ?? false) ||
+        (user?.appWorks.contains('storeadmin') ?? false);
+
+    final canShowGrn = canReceive &&
+        !widget.isSubmittedIndentsSection &&
+        ref.watch(storeCartConfigProvider).grnWorkflowEnabled;
+
     final isMobile = MediaQuery.of(context).size.width < 768;
 
     return Column(
@@ -1316,7 +1358,32 @@ class _StockRefillRequestsListViewState
                       },
                     ),
                     if (!isMobile) ...[
-                      if (canApprove) ...[
+                      if (canApprove && !widget.isSubmittedIndentsSection) ...[
+                        const SizedBox(width: 4),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1565C0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          onPressed: () {
+                            ref.invalidate(pendingStoreConsolidationProvider);
+                            ref.invalidate(pendingStoreConsolidationCountProvider);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const StoreIndentConsolidationPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.hub_outlined, size: 15, color: Colors.white),
+                          label: Text(
+                            'Store Consolidation (${ref.watch(pendingStoreConsolidationCountProvider).value ?? 0})',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                          ),
+                        ),
                         const SizedBox(width: 4),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
@@ -1340,7 +1407,7 @@ class _StockRefillRequestsListViewState
                           ),
                         ),
                       ],
-                      if (ref.watch(storeCartConfigProvider).grnWorkflowEnabled) ...[
+                      if (canShowGrn) ...[
                         const SizedBox(width: 4),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
@@ -1355,35 +1422,43 @@ class _StockRefillRequestsListViewState
                           label: Text(
                             'GRN Cart (${ref.watch(grnCartProvider).length})',
                             style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF1565C0),
-                            iconColor: const Color(0xFF1565C0),
-                            side: const BorderSide(color: Color(0xFF90CAF9)),
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () => _showGrnListModal(context),
-                          icon: const Icon(Icons.receipt_long_outlined, size: 15, color: Color(0xFF1565C0)),
-                          label: const Text(
-                            'GRN Notes',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                           ),
                         ),
                       ],
                     ],
                   ],
                 ),
-                if (isMobile && (canApprove || ref.watch(storeCartConfigProvider).grnWorkflowEnabled)) ...[
+                if (isMobile && ((canApprove && !widget.isSubmittedIndentsSection) || canShowGrn)) ...[
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      if (canApprove)
+                      if (canApprove && !widget.isSubmittedIndentsSection) ...[
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1565C0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          onPressed: () {
+                            ref.invalidate(pendingStoreConsolidationProvider);
+                            ref.invalidate(pendingStoreConsolidationCountProvider);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const StoreIndentConsolidationPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.hub_outlined, size: 15, color: Colors.white),
+                          label: Text(
+                            'Store Consolidation (${ref.watch(pendingStoreConsolidationCountProvider).value ?? 0})',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                          ),
+                        ),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF512DA8),
@@ -1405,7 +1480,8 @@ class _StockRefillRequestsListViewState
                             style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                           ),
                         ),
-                      if (ref.watch(storeCartConfigProvider).grnWorkflowEnabled) ...[
+                      ],
+                      if (canShowGrn) ...[
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF2E7D32),
@@ -1419,21 +1495,6 @@ class _StockRefillRequestsListViewState
                           label: Text(
                             'GRN Cart (${ref.watch(grnCartProvider).length})',
                             style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF1565C0),
-                            iconColor: const Color(0xFF1565C0),
-                            side: const BorderSide(color: Color(0xFF90CAF9)),
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () => _showGrnListModal(context),
-                          icon: const Icon(Icons.receipt_long_outlined, size: 15, color: Color(0xFF1565C0)),
-                          label: const Text(
-                            'GRN Notes',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                           ),
                         ),
                       ],
@@ -1572,7 +1633,12 @@ class _StockRefillRequestsListViewState
                     itemCount: filteredRequests.length,
                     itemBuilder: (context, idx) {
                       final req = filteredRequests[idx];
-                      return _buildRequestCard(context, req, canApprove);
+                      return _buildRequestCard(
+                        context,
+                        req,
+                        canApprove,
+                        canShowGrn,
+                      );
                     },
                   ),
                 ),
@@ -1641,6 +1707,7 @@ class _StockRefillRequestsListViewState
     BuildContext context,
     StockRefillRequestModel req,
     bool canApprove,
+    bool canShowGrn,
   ) {
     Color statusBg;
     Color statusFg;
@@ -2382,8 +2449,37 @@ class _StockRefillRequestsListViewState
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    if (ref.watch(storeCartConfigProvider).grnWorkflowEnabled) ...[
-                      if (ref.watch(grnCartProvider).containsKey(req.id))
+                    if (canShowGrn) ...[
+                      if (req.timeline.any((t) => t.action == 'GRN_APPROVED'))
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const QRCodeScannerRackPage(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1B5E20),
+                            foregroundColor: Colors.white,
+                            iconColor: Colors.white,
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                          ),
+                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 16, color: Colors.white),
+                          label: const Text(
+                            'Scan Rack Putaway',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        )
+                      else if (ref.watch(grnCartProvider).containsKey(req.id))
                         OutlinedButton.icon(
                           onPressed: () => showGrnCartSheet(context),
                           style: OutlinedButton.styleFrom(

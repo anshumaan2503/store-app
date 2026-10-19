@@ -13,6 +13,7 @@ import '../../components/type_defs.dart';
 import '../../components/utils.dart';
 import '../domains/models/stock_refill_request_model.dart';
 import '../domains/models/store_grn_model.dart';
+import 'stock_refill_request_controller.dart';
 
 // ==================== GRN CART STATE ====================
 
@@ -133,6 +134,7 @@ class StoreGrnRepository {
     required List<Map<String, dynamic>> items,
     String? imageUrl,
     String? remarks,
+    bool autoApprove = true,
   }) async {
     try {
       final res = await ref.read(httpClientProvider).post(
@@ -142,6 +144,7 @@ class StoreGrnRepository {
           'items': items,
           'imageUrl': imageUrl ?? '',
           'remarks': remarks ?? '',
+          'autoApprove': autoApprove,
         }),
       );
 
@@ -275,14 +278,15 @@ class StoreGrnController extends StateNotifier<bool> {
   final Ref ref;
   StoreGrnController(this.ref) : super(false);
 
-  Future<bool> submitGrn({
+  Future<StoreGrnModel?> submitGrn({
     String? base64Image,
     String? remarks,
+    bool autoApprove = true,
   }) async {
     final cart = ref.read(grnCartProvider);
     if (cart.isEmpty) {
       showSnackBar('GRN Cart is empty');
-      return false;
+      return null;
     }
 
     state = true;
@@ -320,16 +324,18 @@ class StoreGrnController extends StateNotifier<bool> {
         items: itemsPayload,
         imageUrl: uploadedUrl,
         remarks: remarks,
+        autoApprove: autoApprove,
       );
 
       return res.fold((f) {
         showSnackBar('Failed: ${f.message}');
-        return false;
+        return null;
       }, (grn) {
-        showSnackBar('GRN ${grn.grnNumber} submitted successfully! Status: ${grn.status}');
+        showSnackBar('GRN ${grn.grnNumber} Approved! Ready for QR rack putaway.');
         ref.read(grnCartProvider.notifier).clear();
         ref.invalidate(storeGrnListProvider);
-        return true;
+        ref.invalidate(refillRequestsListProvider);
+        return grn;
       });
     } finally {
       state = false;

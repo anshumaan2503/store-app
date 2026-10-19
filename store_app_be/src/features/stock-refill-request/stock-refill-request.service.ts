@@ -26,6 +26,7 @@ import {
   CreateIndentRaiseDto,
   ReviewIndentRaiseDto,
   UpdateIndentQtyDto,
+  ConsolidatedStoreApproveDto,
 } from './dto/create-indent-raise.dto';
 import {
   AddIndentDraftItemDto,
@@ -235,74 +236,10 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // ONE INDENT RULE: Check if an active indent already exists for this item
-    const existingActiveIndent = await this.indentModel
-      .findOne({
-        $and: [
-          { $or: [{ itemId: item._id }, { itemId: String(item._id) }] },
-          {
-            $or: [
-              { status: 'PENDING' },
-              { status: 'APPROVED', stockCredited: { $ne: true } },
-            ],
-          },
-        ],
-      })
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
-
-    if (existingActiveIndent) {
-      const isPending = existingActiveIndent.status === 'PENDING';
-      const existingNo =
-        existingActiveIndent.indentNumber ||
-        existingActiveIndent.requestNo ||
-        'Existing Indent';
-      const existingQty =
-        existingActiveIndent.indentQty ||
-        existingActiveIndent.requestedQty ||
-        0;
-
-      if (isPending) {
-        throw new BadRequestException(
-          `Indent ${existingNo} for ${existingQty} ${item.unit || 'units'} is already pending approval for "${item.itemName || item.itemCode}". Only one active indent is permitted per item. You can edit the existing indent quantity instead.`,
-        );
-      } else {
-        throw new BadRequestException(
-          `Indent ${existingNo} for ${existingQty} ${item.unit || 'units'} is already approved and in-transit for "${item.itemName || item.itemCode}". You can amend / increase the quantity on the approved indent instead of creating a duplicate.`,
-        );
-      }
-    }
-
     if (maxQty > 0) {
-      // Check active pending indents for this item to ensure indents don't exceed max quantity
-      const pendingIndents = await this.indentModel
-        .find({
-          $or: [{ itemId: item._id }, { itemId: String(item._id) }],
-          status: 'PENDING',
-        })
-        .select('indentQty')
-        .lean()
-        .exec();
-
-      const pendingQty = pendingIndents.reduce(
-        (sum, doc) => sum + (Number(doc.indentQty) || 0),
-        0,
-      );
-
-      const effectiveStock = currentStock + pendingQty;
-
-      if (effectiveStock >= maxQty) {
+      if (qty > maxQty * 1.05) {
         throw new BadRequestException(
-          `Cannot raise indent: Material "${item.itemName || item.itemCode}" has reached its maximum quantity of ${maxQty} considering active pending indents (Current stock: ${currentStock}, Pending indent: ${pendingQty}). Manual indent request cannot be generated.`,
-        );
-      }
-
-      // Rule: Otherwise if the item has not reached maximum quantity, manual request of indent can be generated until it reaches the max quantity
-      const maxAllowedIndent = maxQty - effectiveStock;
-      if (qty > maxAllowedIndent) {
-        throw new BadRequestException(
-          `Cannot raise indent: Requested quantity (${qty}) exceeds the allowable limit to reach maximum quantity of ${maxQty}. Current stock is ${currentStock}${pendingQty > 0 ? ` and pending indents are ${pendingQty}` : ''}. You can only generate an indent up to ${maxAllowedIndent}.`,
+          `Cannot raise indent: Requested quantity (${qty}) exceeds the allowable maximum capacity of ${maxQty} ${item.unit || 'units'}.`,
         );
       }
     } else {
@@ -703,14 +640,23 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
           // Maintain indent-ready flag
           await this.itemModel.findByIdAndUpdate(item._id, { isIndentReady: true });
 
-          // Avoid duplicate indents: Check if an active indent (PENDING or APPROVED uncredited) already exists for this item
+          // Avoid duplicate auto-refill: Check if an active AUTO-REFILL indent already exists for this item
           const existingActive = await this.indentModel
             .findOne({
               $and: [
                 { $or: [{ itemId: item._id }, { itemId: String(item._id) }] },
                 {
                   $or: [
+                    { indentType: 'AUTO_REFILL' },
+                    { requestedBy: 'Automatic' },
+                    { requestedBy: /Auto/i },
+                    { isAutoRefill: true },
+                  ],
+                },
+                {
+                  $or: [
                     { status: 'PENDING' },
+                    { status: 'DEPT_APPROVED' },
                     { status: 'APPROVED', stockCredited: { $ne: true } },
                   ],
                 },
@@ -721,7 +667,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
 
           if (existingActive) {
             console.log(
-              `[EOD Indent Scheduler] Item "${item.itemName}" already has active indent #${existingActive.indentNumber} (${existingActive.status}). Skipping duplicate.`,
+              `[EOD Indent Scheduler] Item "${item.itemName}" already has active auto-refill indent #${existingActive.indentNumber} (${existingActive.status}). Skipping duplicate.`,
             );
             continue;
           }
@@ -822,16 +768,35 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
           costCenter: 'MAIN_STORE',
           documentDate: now,
           documentType: 'INDENT',
-          requestedBy: 'SYSTEM (End-of-Day Auto-Indent)',
+          requestedBy: 'Automatic',
           hsnCode: '',
 
           itemId: item._id,
           requesterId: 'system',
-          status: 'PENDING',
+          status: 'DEPT_APPROVED',
+          deptApprovedAt: now,
+          deptApprovedBy: 'Automatic (Night Scheduler)',
+          deptApprovedById: 'system',
           reason: `EOD Auto-Indent: Combined stock (${entry.combinedStock} = Avail ${entry.avail} + Cart ${entry.inCart}) <= min threshold (${entry.minStock}).`,
           currentAvailableQty: entry.avail,
           currentTotalQty: total,
           stockCredited: false,
+          timeline: [
+            {
+              action: 'AUTO_REFILL_CREATED',
+              title: 'Night Auto-Refill Generated',
+              description: `System evaluated low stock and calculated (max/2 - available): ${entry.indentQty} ${unitOfMeasure}`,
+              actorName: 'Automatic',
+              timestamp: now,
+            },
+            {
+              action: 'DEPT_APPROVED',
+              title: 'Ready for Store Consolidation',
+              description: 'System-generated indent automatically ready for Store Incharge consolidation & approval',
+              actorName: 'Automatic',
+              timestamp: now,
+            },
+          ],
 
           // Legacy mirrors
           requestNo: lineIndentNumber,
@@ -945,7 +910,12 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
   ) {
     const filter: any = {};
     if (status && status.toUpperCase() !== 'ALL') {
-      filter.status = status.toUpperCase();
+      const parts = status.split(',').map((s) => s.trim().toUpperCase());
+      if (parts.length > 1) {
+        filter.status = { $in: parts };
+      } else {
+        filter.status = parts[0];
+      }
     }
     if (uncredited) {
       filter.stockCredited = { $ne: true };
@@ -1019,13 +989,40 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
     if (!doc) {
       throw new NotFoundException('Indent record not found');
     }
-    if (doc.status !== 'PENDING') {
+    if (doc.status !== 'PENDING' && doc.status !== 'DEPT_APPROVED') {
       throw new BadRequestException(
         `Cannot approve indent. Current status is already ${doc.status}`,
       );
     }
 
     const now = new Date();
+
+    // Step 2: Department Approval (If status is PENDING and not direct store approval)
+    const isDeptApproval =
+      doc.status === 'PENDING' && !(dto as any)?.isStoreApproval;
+
+    if (isDeptApproval) {
+      doc.status = 'DEPT_APPROVED';
+      doc.deptApprovedBy = user?.name || user?.email || 'Department Approver';
+      doc.deptApprovedById = (user?._id || user?.uid || '').toString();
+      doc.deptApprovedAt = now;
+      doc.lastChangedOn = now;
+      if (dto?.reviewRemarks) {
+        doc.reviewRemarks = dto.reviewRemarks.trim();
+      }
+
+      doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+      doc.timeline.push({
+        action: 'DEPT_APPROVED',
+        title: 'Department Approved',
+        description: `Approved by Department Approver (${doc.deptApprovedBy}). Forwarded to Store for consolidation & max capacity check.`,
+        actorName: doc.deptApprovedBy || 'Department Approver',
+        timestamp: now,
+      });
+
+      const saved = await doc.save();
+      return this.normalizeOutput(saved);
+    }
 
     // Approval Safety & Max Capacity Auto-Cap
     if (doc.itemId) {
@@ -1120,6 +1117,201 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
 
     const saved = await doc.save();
     return this.normalizeOutput(saved);
+  }
+
+  /**
+   * Step 2.5: Consolidated Store Department Approval.
+   * Store Manager approves selected indents grouped by item with optional quantity adjustments (e.g. reducing auto-refill).
+   * Validates that total selected quantity does not exceed max capacity + 5% buffer.
+   */
+  async consolidatedStoreApprove(dto: ConsolidatedStoreApproveDto, user: any) {
+    if (!dto.items || !Array.isArray(dto.items) || dto.items.length === 0) {
+      throw new BadRequestException('No indents provided for store approval');
+    }
+
+    const now = new Date();
+    const approvedDocs: any[] = [];
+    const indentIds = dto.items.map((i) => i.indentId);
+
+    // Fetch all targeted indents
+    const docs = await this.indentModel.find({ _id: { $in: indentIds } });
+    if (docs.length === 0) {
+      throw new NotFoundException('None of the requested indents were found');
+    }
+
+    // Group items by itemId to validate total capacity
+    const itemGroups = new Map<string, Array<{ doc: any; approvedQty: number; remarks?: string }>>();
+    for (const itemDto of dto.items) {
+      const doc = docs.find((d: any) => (d?._id || '').toString() === itemDto.indentId);
+      if (!doc) continue;
+      const itemIdStr = doc.itemId ? doc.itemId.toString() : 'UNKNOWN';
+      if (!itemGroups.has(itemIdStr)) {
+        itemGroups.set(itemIdStr, []);
+      }
+      itemGroups.get(itemIdStr)!.push({
+        doc,
+        approvedQty: Number(itemDto.approvedQty),
+        remarks: itemDto.remarks,
+      });
+    }
+
+    // Capacity validation per item
+    for (const [itemIdStr, group] of itemGroups.entries()) {
+      if (itemIdStr !== 'UNKNOWN') {
+        const item = await this.itemModel.findById(itemIdStr);
+        if (item) {
+          const maxCap =
+            typeof item.maxCapacity === 'number' && item.maxCapacity > 0
+              ? item.maxCapacity
+              : 0;
+
+          if (maxCap > 0) {
+            const currentStock = Number(item.stockAvailableQuantity) || 0;
+            const totalApprovedQty = group.reduce((sum, g) => sum + g.approvedQty, 0);
+            const maxAllowed = maxCap * 1.05; // 5% buffer allowed as requested by manager
+
+            if (currentStock + totalApprovedQty > maxAllowed) {
+              throw new BadRequestException(
+                `Cannot approve indents for "${item.itemName || item.itemCode}": Total selected quantity (${totalApprovedQty}) plus current stock (${currentStock}) exceeds maximum allowable quantity with buffer of ${maxAllowed.toFixed(1)} ${item.unit || 'units'} (Max: ${maxCap}). Please adjust the quantities (especially auto-refill) to stay within limit.`,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // Save approvals
+    for (const [itemIdStr, group] of itemGroups.entries()) {
+      for (const entry of group) {
+        const { doc, approvedQty, remarks } = entry;
+        const oldQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
+        const qtyChanged = oldQty !== approvedQty;
+
+        if (qtyChanged) {
+          doc.originalIndentQty = doc.originalIndentQty || oldQty;
+          doc.indentQty = approvedQty;
+          doc.requestedQty = approvedQty;
+        }
+
+        doc.status = 'APPROVED';
+        doc.storeApprovedAt = now;
+        doc.storeApprovedBy = user?.name || user?.email || 'Store Approver';
+        doc.storeApprovedById = (user?._id || user?.uid || '').toString();
+        doc.reviewedAt = now;
+        doc.reviewedBy = doc.storeApprovedBy;
+        doc.reviewedById = doc.storeApprovedById;
+        doc.lastChangedOn = now;
+
+        if (remarks) {
+          doc.reviewRemarks = remarks;
+        }
+
+        doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+        if (qtyChanged) {
+          doc.timeline.push({
+            action: 'QTY_ADJUSTED',
+            title: 'Store Capacity Adjustment',
+            description: `Store Incharge adjusted quantity from ${oldQty} to ${approvedQty} to maintain warehouse maximum capacity limit.`,
+            actorName: doc.storeApprovedBy,
+            timestamp: now,
+          });
+        }
+
+        doc.timeline.push({
+          action: 'APPROVED',
+          title: 'Store Approved (Consolidated)',
+          description: `Consolidated & approved by Store Incharge (${doc.storeApprovedBy}). Available for GRN receiving & putaway.`,
+          actorName: doc.storeApprovedBy,
+          timestamp: now,
+        });
+
+        const saved = await doc.save();
+        approvedDocs.push(this.normalizeOutput(saved));
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully consolidated and approved ${approvedDocs.length} indents. Items are now ready for GRN receipt.`,
+      count: approvedDocs.length,
+      data: approvedDocs,
+    };
+  }
+
+  /**
+   * Retrieves indents waiting for Store Incharge consolidation & approval, grouped by item.
+   */
+  async getPendingStoreConsolidation(search?: string) {
+    const filter: any = {
+      $or: [
+        { status: 'DEPT_APPROVED' },
+        { isAutoRefill: true, status: 'PENDING' },
+      ],
+      stockCredited: { $ne: true },
+    };
+
+    const indents = await this.indentModel
+      .find(filter)
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec();
+
+    // Group by item
+    const itemMap = new Map<string, { item: any; indents: any[] }>();
+
+    for (const ind of indents) {
+      const itemIdStr = String(ind.itemId);
+      if (!itemMap.has(itemIdStr)) {
+        const item = await this.itemModel.findById(ind.itemId).lean().exec();
+        itemMap.set(itemIdStr, {
+          item: item || {
+            _id: ind.itemId,
+            itemName: ind.itemName || ind.itemDescription || 'Unknown Item',
+            itemCode: ind.itemCode || '',
+            unit: ind.unitOfMeasure || ind.unit || 'units',
+            stockAvailableQuantity: ind.currentAvailableQty || 0,
+            maxCapacity: 0,
+          },
+          indents: [],
+        });
+      }
+      itemMap.get(itemIdStr)!.indents.push(this.normalizeOutput(ind));
+    }
+
+    const result = Array.from(itemMap.values()).map(({ item, indents }) => {
+      const currentStock = Number(item.stockAvailableQuantity) || 0;
+      const maxCapacity = Number(item.maxCapacity) || 0;
+      const maxAllowedBuffer = maxCapacity > 0 ? Number((maxCapacity * 1.05).toFixed(1)) : 0;
+      const totalIndentQty = indents.reduce(
+        (sum, i) => sum + (Number(i.indentQty ?? i.requestedQty) || 0),
+        0,
+      );
+
+      return {
+        itemId: item._id,
+        itemName: item.itemName || indents[0]?.itemDescription || '',
+        itemCode: item.itemCode || indents[0]?.itemCode || '',
+        unit: item.unit || indents[0]?.unitOfMeasure || 'units',
+        currentStock,
+        maxCapacity,
+        maxAllowedBuffer,
+        totalIndentQty,
+        exceedsMax: maxCapacity > 0 && (currentStock + totalIndentQty) > maxCapacity,
+        exceedsBuffer: maxCapacity > 0 && (currentStock + totalIndentQty) > maxAllowedBuffer,
+        indents,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      return result.filter(
+        (r) =>
+          r.itemName.toLowerCase().includes(q) ||
+          r.itemCode.toLowerCase().includes(q),
+      );
+    }
+
+    return result;
   }
 
   /**
@@ -1688,6 +1880,11 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
       ),
       sourceIssueId: obj.sourceIssueId || '',
       status: (obj.status || 'PENDING').toUpperCase(),
+      originalIndentQty: obj.originalIndentQty ?? null,
+      deptApprovedAt: obj.deptApprovedAt || null,
+      deptApprovedBy: obj.deptApprovedBy || '',
+      storeApprovedAt: obj.storeApprovedAt || null,
+      storeApprovedBy: obj.storeApprovedBy || '',
       stockCredited: obj.stockCredited === true,
       stockCreditedAt: obj.stockCreditedAt || null,
       creditedRackId: obj.creditedRackId || '',

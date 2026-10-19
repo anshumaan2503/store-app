@@ -427,6 +427,75 @@ class StockRefillRequestRepository {
   }
 
 
+  FutureEither<List<ConsolidatedStoreItemModel>> getPendingStoreConsolidation({
+    String? search,
+  }) async {
+    try {
+      final token = await _getToken();
+      final queryParams = <String, String>{
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      };
+
+      final res = await ref.read(httpClientProvider).get(
+            Uri.http(Constants.serverUrl, 'api/store/indents/pending-store-consolidation', queryParams),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+          );
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final list = (data['data'] as List? ?? [])
+            .map((e) => ConsolidatedStoreItemModel.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return Right(list);
+      }
+
+      final errorMsg = _extractErrorMessage(data, fallback: 'Failed to fetch pending store consolidation');
+      return Left(Failure(errorMsg, StackTrace.current));
+    } catch (e, st) {
+      log('getPendingStoreConsolidation error: $e', stackTrace: st);
+      return Left(Failure(e.toString(), st));
+    }
+  }
+
+  FutureEither<Map<String, dynamic>> consolidatedStoreApprove({
+    required List<Map<String, dynamic>> items,
+    String? overallRemarks,
+  }) async {
+    try {
+      final token = await _getToken();
+      final body = {
+        'items': items,
+        if (overallRemarks != null && overallRemarks.trim().isNotEmpty)
+          'overallRemarks': overallRemarks.trim(),
+      };
+
+      final res = await ref.read(httpClientProvider).post(
+            Uri.http(Constants.serverUrl, 'api/store/indents/consolidated-store-approve'),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+            body: json.encode(body),
+          );
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return Right(data);
+      }
+
+      final errorMsg = _extractErrorMessage(data, fallback: 'Failed to approve consolidated indents');
+      return Left(Failure(errorMsg, StackTrace.current));
+    } catch (e, st) {
+      log('consolidatedStoreApprove error: $e', stackTrace: st);
+      return Left(Failure(e.toString(), st));
+    }
+  }
+
   String _extractErrorMessage(Map<String, dynamic> data, {required String fallback}) {
     if (data['msg'] != null && data['msg'].toString().isNotEmpty) {
       return data['msg'].toString();
