@@ -421,7 +421,7 @@ class _ConsolidatedItemAccordionCardState
 
   num get maxCap => widget.itemData.maxCapacity;
 
-  Future<void> _submitStoreApproval() async {
+  Future<void> _submitStoreApproval({bool overrideMaxCapacity = false}) async {
     if (_isSubmitting) return;
 
     if (_selectedIndentIds.isEmpty) {
@@ -434,16 +434,10 @@ class _ConsolidatedItemAccordionCardState
       return;
     }
 
-    if (_exceedsBuffer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFC62828),
-          content: Text(
-            'Cannot approve: Total quantity exceeds Max Capacity (${widget.itemData.maxCapacity}) + 5% Buffer. Please reduce quantity or adjust Night Auto-Refill.',
-          ),
-        ),
-      );
-      return;
+    if (_exceedsBuffer && !overrideMaxCapacity) {
+      final proceed = await _showGoAheadConfirmationDialog();
+      if (proceed != true) return;
+      return _submitStoreApproval(overrideMaxCapacity: true);
     }
 
     final itemsPayload = <Map<String, dynamic>>[];
@@ -453,7 +447,9 @@ class _ConsolidatedItemAccordionCardState
       itemsPayload.add({
         'indentId': id,
         'approvedQty': qty,
-        'remarks': 'Consolidated & Approved by Store Incharge',
+        'remarks': overrideMaxCapacity
+            ? 'Store Incharge Go Ahead Approval (Exceeds Max Capacity)'
+            : 'Consolidated & Approved by Store Incharge',
       });
     }
 
@@ -474,7 +470,10 @@ class _ConsolidatedItemAccordionCardState
           .read(stockRefillRequestControllerProvider.notifier)
           .consolidatedStoreApprove(
             items: itemsPayload,
-            overallRemarks: 'Store Incharge Batch Consolidation',
+            overallRemarks: overrideMaxCapacity
+                ? 'Store Incharge Go Ahead Authorization (Exceeded Max Capacity)'
+                : 'Store Incharge Batch Consolidation',
+            overrideMaxCapacity: overrideMaxCapacity,
           );
 
       if (!mounted) return;
@@ -501,6 +500,114 @@ class _ConsolidatedItemAccordionCardState
         ),
       );
     }
+  }
+
+  Future<bool?> _showGoAheadConfirmationDialog() async {
+    final item = widget.itemData;
+    final totalProjected = item.currentStock + _totalSelectedQty;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xFFE65100),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Authorize Go Ahead?',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _ink900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Selected indents reach or exceed the maximum warehouse capacity for ${item.itemName} (${item.itemCode}):',
+              style: const TextStyle(fontSize: 13, color: _ink700, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAF8F0),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _stroke),
+              ),
+              child: Column(
+                children: [
+                  _dialogStatRow('Current Stock:', '${item.currentStock} ${item.unit}'),
+                  const SizedBox(height: 5),
+                  _dialogStatRow('Indents to Approve:', '$_totalSelectedQty ${item.unit}'),
+                  const Divider(height: 14),
+                  _dialogStatRow(
+                    'Projected Total:',
+                    '$totalProjected ${item.unit}',
+                    bold: true,
+                    color: const Color(0xFFE65100),
+                  ),
+                  const SizedBox(height: 5),
+                  _dialogStatRow('Max Capacity:', '${item.maxCapacity} ${item.unit}'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'As an authorized store user, you can give the go-ahead option to approve and continue with these indents anyway.',
+              style: TextStyle(fontSize: 12, color: _ink600, height: 1.35),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: _ink600, fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE65100),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+            icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+            label: const Text('Go Ahead & Approve', style: TextStyle(fontWeight: FontWeight.w800)),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _dialogStatRow(String label, String value, {bool bold = false, Color? color}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: _ink700, fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
+        Text(value, style: TextStyle(fontSize: 12, color: color ?? _ink900, fontWeight: bold ? FontWeight.w800 : FontWeight.w700)),
+      ],
+    );
   }
 
   @override
@@ -750,27 +857,21 @@ class _ConsolidatedItemAccordionCardState
                         children: [
                           Row(
                             children: [
-                              Icon(
-                                _exceedsBuffer
-                                    ? Icons.block_rounded
-                                    : Icons.warning_amber_rounded,
-                                color: _exceedsBuffer
-                                    ? const Color(0xFFC62828)
-                                    : const Color(0xFFE65100),
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Color(0xFFE65100),
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _exceedsBuffer
-                                      ? 'Capacity Limit Exceeded! (Approval Blocked)'
+                                      ? 'Capacity Limit Exceeded (Go Ahead Available)'
                                       : 'Warning: Exceeds Maximum Capacity',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 13,
-                                    color: _exceedsBuffer
-                                        ? const Color(0xFFC62828)
-                                        : const Color(0xFFE65100),
+                                    color: Color(0xFFE65100),
                                   ),
                                 ),
                               ),
@@ -871,33 +972,36 @@ class _ConsolidatedItemAccordionCardState
                   const SizedBox(height: 14),
 
                   // Bottom Action Bar inside Accordion
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Selected summary count
-                      Text(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 420;
+                      final summaryWidget = Text(
                         'Total to Approve: $_totalSelectedQty ${item.unit}',
                         style: TextStyle(
-                          fontSize: 13.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
                           color: _exceedsBuffer
-                              ? const Color(0xFFC62828)
+                              ? const Color(0xFFE65100)
                               : const Color(0xFF2E7D32),
                         ),
-                      ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      );
 
-                      // Approve Button
-                      ElevatedButton.icon(
-                        onPressed:
-                            (_isSubmitting || _exceedsBuffer || _selectedIndentIds.isEmpty)
-                                ? null
-                                : _submitStoreApproval,
+                      final approveButton = ElevatedButton.icon(
+                        onPressed: (_isSubmitting || _selectedIndentIds.isEmpty)
+                            ? null
+                            : () => _submitStoreApproval(overrideMaxCapacity: _exceedsBuffer),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D32),
+                          backgroundColor: _exceedsBuffer
+                              ? const Color(0xFFE65100)
+                              : const Color(0xFF2E7D32),
                           foregroundColor: Colors.white,
                           elevation: 1,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 11),
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -906,25 +1010,50 @@ class _ConsolidatedItemAccordionCardState
                         ),
                         icon: _isSubmitting
                             ? const SizedBox(
-                                width: 16,
-                                height: 16,
+                                width: 14,
+                                height: 14,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.verified_rounded, size: 18),
+                            : Icon(
+                                _exceedsBuffer
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.verified_rounded,
+                                size: 17,
+                              ),
                         label: Text(
                           _exceedsBuffer
-                              ? 'Exceeds Max Limit (${item.maxAllowedBuffer})'
-                              : 'Approve Selected (${_selectedIndentIds.length} indents)',
+                              ? 'Go Ahead & Approve (${_selectedIndentIds.length})'
+                              : 'Approve Selected (${_selectedIndentIds.length})',
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                      ),
-                    ],
+                      );
+
+                      if (isNarrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            summaryWidget,
+                            const SizedBox(height: 8),
+                            approveButton,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: summaryWidget),
+                          const SizedBox(width: 8),
+                          approveButton,
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),

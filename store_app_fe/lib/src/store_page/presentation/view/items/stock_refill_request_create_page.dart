@@ -6,6 +6,8 @@ import '../../../../auth/controllers/users_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../../../domains/models/stock_refill_request_model.dart';
 import '../../../controllers/stock_refill_request_controller.dart';
+import '../../../controllers/indent_draft_controller.dart';
+import '../indent/indent_drafts_page.dart';
 import '../../widgets/store_ui_state_widgets.dart';
 
 const _ink900 = Color(0xFF282321);
@@ -480,6 +482,116 @@ class _StockRefillRequestCreatePageState
     );
   }
 
+  Future<void> _addToIndentCart() async {
+    if (_submitting) return;
+
+    if (!_formKey.currentState!.validate()) return;
+
+    final qty = num.tryParse(_qtyController.text.trim());
+    if (qty == null || qty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFC62828),
+          content: Text('Please enter a valid indent quantity (>= 1)'),
+        ),
+      );
+      return;
+    }
+
+    if (widget.item.maxCapacity > 0) {
+      final current = widget.item.stockAvailableQuantity;
+      if (current >= widget.item.maxCapacity) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFC62828),
+            content: Text(
+              'Cannot add to cart: "${widget.item.itemName}" has reached its maximum quantity of ${widget.item.maxCapacity}.',
+            ),
+          ),
+        );
+        return;
+      }
+      final remaining = widget.item.maxCapacity - current;
+      if (qty > remaining) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFC62828),
+            content: Text(
+              'Requested quantity ($qty) exceeds allowable limit ($remaining) to reach maximum quantity (${widget.item.maxCapacity}).',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() => _submitting = true);
+
+    try {
+      final success = await ref
+          .read(indentDraftControllerProvider.notifier)
+          .addDraftItem(
+            itemId: widget.item.id,
+            quantity: qty.toInt(),
+            reason: _reasonController.text.trim().isNotEmpty
+                ? _reasonController.text.trim()
+                : null,
+            itemName: widget.item.itemName,
+            itemCode: widget.item.itemCode,
+            unit: widget.item.unit,
+            imageUrl: widget.item.imageUrl,
+          );
+
+      if (!mounted) return;
+      setState(() => _submitting = false);
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _ink900,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            content: Text(
+              'Added "${widget.item.itemName}" ($qty ${widget.item.unit}) to Indent Cart',
+              style: const TextStyle(fontWeight: FontWeight.w600, color: _surface),
+            ),
+            action: SnackBarAction(
+              label: 'VIEW CART',
+              textColor: _surfaceAlt,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const IndentDraftsPage(),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFC62828),
+            content: Text('Failed to add item to Indent Cart'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFC62828),
+          content: Text('Error adding to cart: $e'),
+        ),
+      );
+    }
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
 
@@ -625,6 +737,59 @@ class _StockRefillRequestCreatePageState
         elevation: 0,
         backgroundColor: _surface,
         iconTheme: const IconThemeData(color: _ink900),
+        actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final draftCount = ref.watch(
+                indentDraftControllerProvider.select((s) => s.items.length),
+              );
+              return Padding(
+                padding: const EdgeInsets.only(right: 12.0),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.post_add_rounded, size: 24),
+                      tooltip: 'Indent Cart ($draftCount items)',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const IndentDraftsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    if (draftCount > 0)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _ink900,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                              minWidth: 16, minHeight: 16),
+                          child: Text(
+                            '$draftCount',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _surface,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: _stroke, height: 1),
@@ -1399,53 +1564,110 @@ class _StockRefillRequestCreatePageState
                     ),
                     const SizedBox(height: 20),
 
-                    // Submit Button
-                    ElevatedButton(
-                      onPressed: (_submitting || isMaxReached) ? null : _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isMaxReached ? Colors.grey : _ink900,
-                        foregroundColor: _surface,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                    // Action Buttons
+                    if (isMaxReached)
+                      ElevatedButton(
+                        onPressed: null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade400,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
-                        elevation: 2,
-                      ),
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  isMaxReached
-                                      ? Icons.block_rounded
-                                      : Icons.send_rounded,
-                                  size: 18,
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.block_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Maximum Quantity Reached — Cannot Indent',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w800,
                                 ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    isMaxReached
-                                        ? 'Maximum Quantity Reached — Cannot Indent'
-                                        : 'Submit Indent Request',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      // Primary: Add to Indent Cart
+                      ElevatedButton(
+                        onPressed: _submitting ? null : _addToIndentCart,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _ink900,
+                          foregroundColor: _surface,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 2,
+                        ),
+                        child: _submitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.playlist_add_rounded, size: 20),
+                                  SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      'Add to Indent Cart',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
                                     ),
                                   ),
+                                ],
+                              ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Secondary: Submit Single Indent Directly
+                      OutlinedButton(
+                        onPressed: _submitting ? null : _submit,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _ink700,
+                          side: const BorderSide(color: _stroke, width: 1.2),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.send_rounded, size: 16),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Submit Single Indent Directly',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
                                 ),
-                              ],
+                              ),
                             ),
-                    ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

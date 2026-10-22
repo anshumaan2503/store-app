@@ -38,6 +38,10 @@ export class AddIndentDraftItemDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  indentType?: string;
 }
 
 export class AddIndentDraftBatchDto {

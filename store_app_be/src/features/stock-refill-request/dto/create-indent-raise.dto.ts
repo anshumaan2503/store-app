@@ -181,6 +181,10 @@ export class ReviewIndentRaiseDto {
   @IsOptional()
   @IsNumber()
   creditQty?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideMaxCapacity?: boolean;
 }
 
 export class UpdateIndentQtyDto {
@@ -221,5 +225,9 @@ export class ConsolidatedStoreApproveDto {
   @IsOptional()
   @IsString()
   overallRemarks?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideMaxCapacity?: boolean;
 }
 

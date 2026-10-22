@@ -244,6 +244,7 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
     bool? directStockIn,
     String? rackId,
     num? creditQty,
+    bool overrideMaxCapacity = false,
   }) async {
     state = const AsyncValue.loading();
     final repo = _ref.read(stockRefillRequestRepositoryProvider);
@@ -253,6 +254,7 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
       directStockIn: directStockIn,
       rackId: rackId,
       creditQty: creditQty,
+      overrideMaxCapacity: overrideMaxCapacity,
     );
 
     return res.fold(
@@ -390,12 +392,14 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
   Future<bool> consolidatedStoreApprove({
     required List<Map<String, dynamic>> items,
     String? overallRemarks,
+    bool overrideMaxCapacity = false,
   }) async {
     state = const AsyncValue.loading();
     final repo = _ref.read(stockRefillRequestRepositoryProvider);
     final res = await repo.consolidatedStoreApprove(
       items: items,
       overallRemarks: overallRemarks,
+      overrideMaxCapacity: overrideMaxCapacity,
     );
 
     return res.fold(

@@ -18,6 +18,8 @@ credentials
 credentials.*
 CREDENTIALS*
 *.credentials
+DOCKER_START_GUIDE_old.md
+DOCKER_START_GUIDE_old*
 
 # --- Database Dumps & Data Files ---
 # Whitelist project seed dump for MongoDB restoration

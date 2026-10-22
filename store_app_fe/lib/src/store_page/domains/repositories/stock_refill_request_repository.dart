@@ -206,6 +206,7 @@ class StockRefillRequestRepository {
     bool? directStockIn,
     String? rackId,
     num? creditQty,
+    bool overrideMaxCapacity = false,
   }) async {
     try {
       final token = await _getToken();
@@ -217,6 +218,7 @@ class StockRefillRequestRepository {
           'rackId': rackId.trim(),
         if (creditQty != null && creditQty > 0)
           'creditQty': creditQty,
+        if (overrideMaxCapacity) 'overrideMaxCapacity': true,
       };
 
       final res = await ref
@@ -464,6 +466,7 @@ class StockRefillRequestRepository {
   FutureEither<Map<String, dynamic>> consolidatedStoreApprove({
     required List<Map<String, dynamic>> items,
     String? overallRemarks,
+    bool overrideMaxCapacity = false,
   }) async {
     try {
       final token = await _getToken();
@@ -471,6 +474,8 @@ class StockRefillRequestRepository {
         'items': items,
         if (overallRemarks != null && overallRemarks.trim().isNotEmpty)
           'overallRemarks': overallRemarks.trim(),
+        if (overrideMaxCapacity)
+          'overrideMaxCapacity': true,
       };
 
       final res = await ref.read(httpClientProvider).post(

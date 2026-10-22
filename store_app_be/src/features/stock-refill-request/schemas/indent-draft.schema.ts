@@ -24,6 +24,9 @@ export class IndentDraftItem {
   @Prop({ default: '' })
   reason?: string;
 
+  @Prop({ default: 'STORE_REFILL' })
+  indentType?: string;
+
   @Prop({ default: () => new Date() })
   addedAt: Date;
 }

@@ -122,6 +122,14 @@ extension AuthModelStorePermissions on AuthModel {
       isSuperAdmin ||
       appWorks.contains('storeadmin') ||
       appWorks.contains('storeitemfind');
+
+  bool get canRaiseIndent =>
+      isSuperAdmin ||
+      canIssue ||
+      canReceive ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storrefilladd') ||
+      appWorks.contains('storeitemview');
 }
 
 /* ---------------- Page ---------------- */
@@ -383,23 +391,16 @@ class _StoreDashboardShellPageState
                 child:
                     showSidebar
                         ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            (u.canReceive || u.canIssue || u.canReturn)
-                                ? _OuterStoreNav(
-                                  selected: _section,
-                                  onSelect: (s) => setState(() => _section = s),
-                                  user: u,
-                                )
-                                : const SizedBox.shrink(),
-
-                            const SizedBox(width: 12),
-                            _InnerStoreNav(
+                            _UnifiedStoreSidebar(
                               selected: _section,
+                              user: u,
                               onSelect: (s) {
                                 if (s == StoreSection.findItem && !u.canFindItemNav) return;
+                                if (s == StoreSection.places && !u.canPlaces) return;
                                 setState(() => _section = s);
                               },
-                              user: u,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -449,23 +450,29 @@ class _StoreDashboardShellPageState
           title: title,
           subtitle: 'Inventory & Operations',
           leadingIcon: leadingIcon,
-          onBack: () => Navigator.maybePop(context),
+          onBack: () {
+            if (_section != StoreSection.items && _section != StoreSection.dashboard) {
+              setState(() => _section = StoreSection.items);
+            } else {
+              Navigator.maybePop(context);
+            }
+          },
           onStartTour: _startGuidedTour,
           // 3-dots menu to access Receive, Issue, Return on mobile/tablet or top header
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (user.canIssue) ...[
+              if (user.canRaiseIndent) ...[
                 Consumer(
                   builder: (context, ref, _) {
                     final draftState = ref.watch(indentDraftControllerProvider);
                     return Badge.count(
                       count: draftState.lineCount,
                       isLabelVisible: draftState.lineCount > 0,
-                      backgroundColor: const Color(0xFF2563EB),
+                      backgroundColor: _ink900,
                       textColor: _surface,
                       child: Tooltip(
-                        message: 'Indent Review (${draftState.lineCount})',
+                        message: 'Indent Cart (${draftState.lineCount})',
                         child: InkWell(
                           borderRadius: BorderRadius.circular(12),
                           onTap: () {
@@ -486,7 +493,7 @@ class _StoreDashboardShellPageState
                               border: Border.all(color: _stroke),
                             ),
                             child: const Icon(
-                              Icons.assignment_outlined,
+                              Icons.post_add_rounded,
                               color: _ink900,
                               size: 20,
                             ),
@@ -497,6 +504,8 @@ class _StoreDashboardShellPageState
                   },
                 ),
                 const SizedBox(width: 8),
+              ],
+              if (user.canIssue) ...[
                 Consumer(
                   builder: (context, ref, _) {
                     final cart = ref.watch(storeCartProvider);
@@ -573,10 +582,11 @@ class _StoreDashboardShellPageState
                     );
                   },
                 ),
-              if (user.canReceive ||
-                  user.canIssue ||
-                  user.canReturn ||
-                  user.isSuperAdmin)
+              if (!showSidebar &&
+                  (user.canReceive ||
+                      user.canIssue ||
+                      user.canReturn ||
+                      user.isSuperAdmin))
                 PopupMenuButton<StoreSection>(
                   tooltip: 'More Sections',
                   onSelected: (s) => setState(() => _section = s),
@@ -774,70 +784,114 @@ class _StoreDashboardShellPageState
   }
 }
 
-/* ---------------- Outer Sidebar (Store + Admin/Receive/Issue) ---------------- */
+/* ---------------- Unified Modern Store Sidebar (Desktop / Web) ---------------- */
 
-class _OuterStoreNav extends StatelessWidget {
-  const _OuterStoreNav({
+class _UnifiedStoreSidebar extends StatelessWidget {
+  const _UnifiedStoreSidebar({
     required this.selected,
-    required this.onSelect,
     required this.user,
+    required this.onSelect,
   });
-  final AuthModel user;
+
   final StoreSection selected;
+  final AuthModel user;
   final ValueChanged<StoreSection> onSelect;
 
   bool _isSelected(StoreSection s) => selected == s;
 
   @override
   Widget build(BuildContext context) {
+    final initials = user.name.trim().isNotEmpty
+        ? user.name.trim().substring(0, 1).toUpperCase()
+        : 'U';
+    final roleText = user.isSuperAdmin
+        ? 'Super Admin'
+        : user.canReceive && user.canIssue
+            ? 'Store Manager'
+            : user.canIssue
+                ? 'Issue Incharge'
+                : 'Store Staff';
+
     return Container(
-      width: 170,
+      width: 215,
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _stroke),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
+            color: Color(0x0C000000),
+            blurRadius: 16,
+            offset: Offset(0, 6),
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header like screenshot ("Store" + icon)
+          // Store Branding Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _stroke),
+              color: _surfaceAlt.withValues(alpha: .45),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _stroke.withValues(alpha: .7)),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: _accentMint.withValues(alpha: .65),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _stroke),
+                    color: _ink900,
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: const Icon(
                     Icons.store_rounded,
-                    color: _ink900,
+                    color: _accentMint,
                     size: 18,
                   ),
                 ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Store',
-                  style: TextStyle(
-                    color: _ink900,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Store Inventory',
+                        style: TextStyle(
+                          color: _ink900,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12.5,
+                          letterSpacing: -0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            'Active Hub',
+                            style: TextStyle(
+                              color: _ink600,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -846,214 +900,256 @@ class _OuterStoreNav extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          if (user.canReceive) ...[
-            _OuterItem(
-              icon: Icons.inbox_rounded,
-              label: 'Receive',
-              selected: _isSelected(StoreSection.receive),
-              onTap: () => onSelect(StoreSection.receive),
+          // Scrollable Navigation Item List (Prevents overflow on smaller laptop screens)
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _NavCategoryLabel(label: 'MAIN'),
+                  const SizedBox(height: 3),
+                  _SidebarItem(
+                    activeIcon: Icons.grid_view_rounded,
+                    inactiveIcon: Icons.grid_view_outlined,
+                    label: 'Dashboard',
+                    selected: _isSelected(StoreSection.dashboard),
+                    onTap: () => onSelect(StoreSection.dashboard),
+                  ),
+                  _SidebarItem(
+                    activeIcon: Icons.list_alt_rounded,
+                    inactiveIcon: Icons.list_alt_outlined,
+                    label: 'Items',
+                    selected: _isSelected(StoreSection.items),
+                    onTap: () => onSelect(StoreSection.items),
+                  ),
+                  if (user.canFindItemNav)
+                    _SidebarItem(
+                      key: GuidedTourController.findItemKey,
+                      activeIcon: Icons.location_searching_rounded,
+                      inactiveIcon: Icons.search_rounded,
+                      label: 'Find Item',
+                      selected: _isSelected(StoreSection.findItem),
+                      onTap: () => onSelect(StoreSection.findItem),
+                    ),
+                  if (user.canPlaces)
+                    _SidebarItem(
+                      key: GuidedTourController.placesKey,
+                      activeIcon: Icons.place_rounded,
+                      inactiveIcon: Icons.place_outlined,
+                      label: 'Places',
+                      selected: _isSelected(StoreSection.places),
+                      onTap: () => onSelect(StoreSection.places),
+                    ),
+
+                  if (user.canReceive || user.canIssue || user.canReturn) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 1,
+                      color: _stroke.withValues(alpha: .5),
+                      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    ),
+                    const _NavCategoryLabel(label: 'OPERATIONS'),
+                    const SizedBox(height: 3),
+                    if (user.canReceive)
+                      _SidebarItem(
+                        activeIcon: Icons.inbox_rounded,
+                        inactiveIcon: Icons.move_to_inbox_outlined,
+                        label: 'Receive',
+                        selected: _isSelected(StoreSection.receive),
+                        onTap: () => onSelect(StoreSection.receive),
+                      ),
+                    if (user.canIssue)
+                      _SidebarItem(
+                        key: GuidedTourController.issueNavButtonKey,
+                        activeIcon: Icons.call_split_rounded,
+                        inactiveIcon: Icons.call_split_outlined,
+                        label: 'Issue',
+                        selected: _isSelected(StoreSection.issue),
+                        onTap: () => onSelect(StoreSection.issue),
+                      ),
+                    if (user.canReturn)
+                      _SidebarItem(
+                        activeIcon: Icons.reset_tv_rounded,
+                        inactiveIcon: Icons.restart_alt_rounded,
+                        label: 'Return',
+                        selected: _isSelected(StoreSection.returns),
+                        onTap: () => onSelect(StoreSection.returns),
+                      ),
+                  ],
+
+                  if (user.isSuperAdmin) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 1,
+                      color: _stroke.withValues(alpha: .5),
+                      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    ),
+                    const _NavCategoryLabel(label: 'ADMINISTRATION'),
+                    const SizedBox(height: 3),
+                    _SidebarItem(
+                      activeIcon: Icons.manage_accounts_rounded,
+                      inactiveIcon: Icons.manage_accounts_outlined,
+                      label: 'Manage Users',
+                      selected: _isSelected(StoreSection.admin),
+                      onTap: () => onSelect(StoreSection.admin),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-          ],
-          if (user.canIssue) ...[
-            _OuterItem(
-              key: GuidedTourController.issueNavButtonKey,
-              icon: Icons.call_split_rounded,
-              label: 'Issue',
-              selected: _isSelected(StoreSection.issue),
-              onTap: () => onSelect(StoreSection.issue),
+          ),
+
+          const SizedBox(height: 8),
+
+          // User Profile Quick Footer
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: _surfaceAlt.withValues(alpha: .25),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _stroke.withValues(alpha: .5)),
             ),
-            const SizedBox(height: 8),
-          ],
-          if (user.canReturn) ...[
-            _OuterItem(
-              icon: Icons.reset_tv_rounded,
-              label: 'Return',
-              selected: _isSelected(StoreSection.returns),
-              onTap: () => onSelect(StoreSection.returns),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: _ink900,
+                  child: Text(
+                    initials,
+                    style: const TextStyle(
+                      color: _accentMint,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        user.name.isNotEmpty ? user.name : 'Store User',
+                        style: const TextStyle(
+                          color: _ink900,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        roleText,
+                        style: const TextStyle(
+                          color: _ink600,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 9.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
-          const Spacer(),
+          ),
         ],
       ),
     );
   }
 }
 
-class _OuterItem extends StatelessWidget {
-  const _OuterItem({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
+class _NavCategoryLabel extends StatelessWidget {
+  const _NavCategoryLabel({required this.label});
   final String label;
-  final bool selected;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? _ink900 : _surface;
-    final fg = selected ? _surface : _ink700;
-    final border = selected ? _ink900 : _stroke;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: fg, size: 20),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 2, top: 4),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: _ink600,
+          fontWeight: FontWeight.w800,
+          fontSize: 9.5,
+          letterSpacing: 0.9,
         ),
       ),
     );
   }
 }
 
-/* ---------------- Inner Sidebar (Dashboard/Items/Places) ---------------- */
-
-class _InnerStoreNav extends StatelessWidget {
-  const _InnerStoreNav({
-    required this.selected,
-    required this.user,
-    required this.onSelect,
-  });
-  final AuthModel user;
-  final StoreSection selected;
-  final ValueChanged<StoreSection> onSelect;
-
-  bool _sel(StoreSection s) => selected == s;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 110,
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _stroke),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-      child: Column(
-        children: [
-          _InnerIcon(
-            icon: Icons.grid_view_rounded,
-            label: 'Dashboard',
-            selected: _sel(StoreSection.dashboard),
-            onTap: () => onSelect(StoreSection.dashboard),
-          ),
-          const SizedBox(height: 10),
-          _InnerIcon(
-            icon: Icons.list_alt_rounded,
-            label: 'Items',
-            selected: _sel(StoreSection.items),
-            onTap: () => onSelect(StoreSection.items),
-          ),
-          const SizedBox(height: 10),
-          if (user.canFindItemNav) ...[
-            _InnerIcon(
-              key: GuidedTourController.findItemKey,
-              icon: Icons.location_searching_rounded,
-              label: 'Find Item',
-              selected: _sel(StoreSection.findItem),
-              onTap: () => onSelect(StoreSection.findItem),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (user.canPlaces) ...[
-            _InnerIcon(
-              key: GuidedTourController.placesKey,
-              icon: Icons.place_rounded,
-              label: 'Places',
-              selected: _sel(StoreSection.places),
-              onTap: () => onSelect(StoreSection.places),
-            ),
-            const SizedBox(height: 10),
-          ],
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-}
-
-class _InnerIcon extends StatelessWidget {
-  const _InnerIcon({
+class _SidebarItem extends StatelessWidget {
+  const _SidebarItem({
     super.key,
-    required this.icon,
+    required this.activeIcon,
+    required this.inactiveIcon,
     required this.label,
     required this.selected,
     required this.onTap,
   });
 
-  final IconData icon;
+  final IconData activeIcon;
+  final IconData inactiveIcon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? _ink900 : _surface;
+    final bg = selected ? _ink900 : Colors.transparent;
     final fg = selected ? _surface : _ink700;
-    final border = selected ? _ink900 : _stroke;
+    final iconColor = selected ? _accentMint : _ink900;
+    final icon = selected ? activeIcon : inactiveIcon;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: fg),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2.5),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(9),
+          hoverColor: _accentMint.withValues(alpha: .2),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeInOut,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor, size: 18),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: fg,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 12.5,
+                      letterSpacing: -0.1,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
+                if (selected)
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(
+                      color: _accentMint,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1241,10 +1337,27 @@ class _HeaderCard extends StatelessWidget {
               ],
             ),
           ),
-          const StoreNotificationBellButton(),
-          SizedBox(width: actionGap),
-          StoreHelpButton(onStartTour: onStartTour),
-          if (trailing != null) ...[SizedBox(width: actionGap), trailing!],
+          const SizedBox(width: 6),
+          Flexible(
+            fit: FlexFit.loose,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const StoreNotificationBellButton(),
+                  SizedBox(width: actionGap),
+                  StoreHelpButton(onStartTour: onStartTour),
+                  if (trailing != null) ...[
+                    SizedBox(width: actionGap),
+                    trailing!,
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

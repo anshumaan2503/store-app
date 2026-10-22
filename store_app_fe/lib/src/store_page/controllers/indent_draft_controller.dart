@@ -25,6 +25,15 @@ class IndentDraftState {
   bool get isEmpty => items.isEmpty;
   bool get isNotEmpty => items.isNotEmpty;
 
+  IndentDraftItemModel? findById(String itemId) {
+    for (final i in items) {
+      if (i.itemId == itemId) return i;
+    }
+    return null;
+  }
+
+  bool containsItem(String itemId) => items.any((i) => i.itemId == itemId);
+
   IndentDraftState copyWith({
     List<IndentDraftItemModel>? items,
     bool? isLoading,
@@ -124,6 +133,31 @@ class IndentDraftController extends StateNotifier<IndentDraftState> {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
     return false;
+  }
+
+  /// Convenience method to add a single item to the indent draft cart
+  Future<bool> addDraftItem({
+    required String itemId,
+    required int quantity,
+    String? reason,
+    String? itemName,
+    String? itemCode,
+    String? unit,
+    String? imageUrl,
+    String? indentType,
+  }) async {
+    return addDraftItems([
+      {
+        'itemId': itemId,
+        'quantity': quantity,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+        if (itemName != null && itemName.isNotEmpty) 'itemName': itemName,
+        if (itemCode != null && itemCode.isNotEmpty) 'itemCode': itemCode,
+        if (unit != null && unit.isNotEmpty) 'unit': unit,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+        if (indentType != null && indentType.isNotEmpty) 'indentType': indentType,
+      }
+    ]);
   }
 
   /// Updates quantity or reason for a draft item

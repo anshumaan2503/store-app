@@ -14,7 +14,6 @@ const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFFFF4E2);
 const _stroke = Color(0xFFDFE1D6);
 
-const _accentMint = Color(0xFFB6D3CC);
 const _bgTop = Color(0xFFFFFFF3);
 const _bgBottom = _surfaceAlt;
 
@@ -26,7 +25,7 @@ class IndentDraftsPage extends ConsumerStatefulWidget {
 }
 
 class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
-  final Set<String> _selectedItemIds = {};
+  final Set<String> _unselectedItemIds = {};
   bool _isSubmitting = false;
   final _scrollController = ScrollController();
 
@@ -71,7 +70,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
           ],
         ),
         backgroundColor:
-            isError ? Colors.red.shade700 : const Color(0xFF2563EB),
+            isError ? Colors.red.shade700 : _ink900,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 3),
@@ -157,9 +156,9 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
   }
 
   Future<void> _submitCombinedIndent(List<IndentDraftItemModel> items) async {
-    final toSubmit = _selectedItemIds.isEmpty
-        ? items
-        : items.where((i) => _selectedItemIds.contains(i.itemId)).toList();
+    final toSubmit = items
+        .where((i) => !_unselectedItemIds.contains(i.itemId))
+        .toList();
 
     if (toSubmit.isEmpty) {
       _showSnack('Please select at least one item to submit', isError: true);
@@ -221,7 +220,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
+                backgroundColor: _ink900,
                 foregroundColor: _surface,
               ),
               onPressed: () => Navigator.pop(ctx, true),
@@ -247,7 +246,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
       if (result != null) {
         final indentNo = result['groupIndentNumber']?.toString() ?? 'Submitted';
         final count = result['submittedCount']?.toString() ?? '${toSubmit.length}';
-        _selectedItemIds.clear();
+        _unselectedItemIds.clear();
         _showSnack('Combined Indent $indentNo ($count items) submitted for Approval!');
       } else {
         final err = ref.read(indentDraftControllerProvider).error ?? 'Submission failed';
@@ -263,9 +262,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
     final state = ref.watch(indentDraftControllerProvider);
     final items = state.items;
 
-    // Auto-select all if selection is currently empty
-    final allSelected = items.isNotEmpty &&
-        items.every((i) => _selectedItemIds.contains(i.itemId));
+    final allSelected = items.isNotEmpty && _unselectedItemIds.isEmpty;
 
     return Scaffold(
       backgroundColor: _surface,
@@ -277,7 +274,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
         title: Row(
           children: [
             const Text(
-              'Indent Review & Submission',
+              'Indent Cart',
               style: TextStyle(color: _ink900, fontWeight: FontWeight.w900, fontSize: 17),
             ),
             if (items.isNotEmpty) ...[
@@ -314,8 +311,8 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Clear All Indent Drafts?'),
-                    content: const Text('Are you sure you want to remove all unsubmitted indent items?'),
+                    title: const Text('Clear Indent Cart?'),
+                    content: const Text('Are you sure you want to remove all unsubmitted indent items from your cart?'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                       FilledButton(
@@ -331,8 +328,8 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                 );
                 if (confirm == true) {
                   await ref.read(indentDraftControllerProvider.notifier).clearDrafts();
-                  _selectedItemIds.clear();
-                  _showSnack('Draft list cleared');
+                  _unselectedItemIds.clear();
+                  _showSnack('Indent cart cleared');
                 }
               },
             ),
@@ -374,14 +371,14 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                 border: Border.all(color: _stroke, width: 2),
               ),
               child: const Icon(
-                Icons.assignment_outlined,
+                Icons.shopping_bag_outlined,
                 size: 44,
                 color: _ink600,
               ),
             ),
             const SizedBox(height: 20),
             const Text(
-              'No Unsubmitted Indents',
+              'Your Indent Cart is Empty',
               style: TextStyle(
                 color: _ink900,
                 fontSize: 18,
@@ -390,7 +387,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'When items in your Requisition Cart exceed available stock, the shortage automatically moves here for you to review and combine before submitting.',
+              'Add multiple items from Store Items to your Indent Cart to raise them together in a single combined indent request.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: _ink600,
@@ -409,7 +406,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               ),
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.arrow_back_rounded, size: 18),
-              label: const Text('Back to Store'),
+              label: const Text('Browse Store Items'),
             ),
           ],
         ),
@@ -480,12 +477,17 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                   Checkbox(
                     value: allSelected,
                     activeColor: _ink900,
+                    checkColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFF9E9E9E), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                     onChanged: (val) {
                       setState(() {
                         if (val == true) {
-                          _selectedItemIds.addAll(items.map((i) => i.itemId));
+                          _unselectedItemIds.clear();
                         } else {
-                          _selectedItemIds.clear();
+                          _unselectedItemIds.addAll(items.map((i) => i.itemId));
                         }
                       });
                     },
@@ -501,7 +503,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                 ],
               ),
               Text(
-                '${_selectedItemIds.isEmpty ? items.length : _selectedItemIds.length} selected',
+                '${items.where((i) => !_unselectedItemIds.contains(i.itemId)).length} selected',
                 style: const TextStyle(
                   color: _ink600,
                   fontSize: 12,
@@ -520,7 +522,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (ctx, idx) {
               final item = items[idx];
-              final isChecked = _selectedItemIds.isEmpty || _selectedItemIds.contains(item.itemId);
+              final isChecked = !_unselectedItemIds.contains(item.itemId);
               return _buildItemCard(item, isChecked);
             },
           ),
@@ -560,12 +562,17 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               Checkbox(
                 value: isChecked,
                 activeColor: _ink900,
+                checkColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF9E9E9E), width: 1.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 onChanged: (val) {
                   setState(() {
                     if (val == true) {
-                      _selectedItemIds.add(item.itemId);
+                      _unselectedItemIds.remove(item.itemId);
                     } else {
-                      _selectedItemIds.remove(item.itemId);
+                      _unselectedItemIds.add(item.itemId);
                     }
                   });
                 },
@@ -618,7 +625,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                 tooltip: 'Remove',
                 onPressed: () async {
                   await notifier.removeItem(item.itemId);
-                  _selectedItemIds.remove(item.itemId);
+                  _unselectedItemIds.remove(item.itemId);
                   _showSnack('Removed ${item.itemName} from draft list');
                 },
               ),
@@ -629,61 +636,57 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
           const Divider(height: 1, color: _stroke),
           const SizedBox(height: 8),
 
-          // Real-Time Stock Status & Quantity Stepper Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Real-Time Live Stock Indicator
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
+          // Real-Time Stock Status & Quantity Stepper Row (Mobile-Optimized)
+          LayoutBuilder(
+            builder: (context, cardConstraints) {
+              final isVeryNarrow = cardConstraints.maxWidth < 350;
+
+              final stockIndicator = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: item.realTimeAvailableQty > 0
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
                     color: item.realTimeAvailableQty > 0
-                        ? const Color(0xFFE8F5E9)
-                        : const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: item.realTimeAvailableQty > 0
-                          ? const Color(0xFFA5D6A7)
-                          : const Color(0xFFFFCC80),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item.realTimeAvailableQty > 0
-                            ? Icons.check_circle_rounded
-                            : Icons.hourglass_bottom_rounded,
-                        size: 13,
-                        color: item.realTimeAvailableQty > 0
-                            ? const Color(0xFF2E7D32)
-                            : const Color(0xFFE65100),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          item.realTimeAvailableQty > 0
-                              ? 'Live Stock: ${item.realTimeAvailableQty} available'
-                              : 'Live Stock: 0 in store (Shortage)',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: item.realTimeAvailableQty > 0
-                                ? const Color(0xFF2E7D32)
-                                : const Color(0xFFE65100),
-                          ),
-                        ),
-                      ),
-                    ],
+                        ? const Color(0xFFA5D6A7)
+                        : const Color(0xFFFFCC80),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      item.realTimeAvailableQty > 0
+                          ? Icons.check_circle_rounded
+                          : Icons.hourglass_bottom_rounded,
+                      size: 13,
+                      color: item.realTimeAvailableQty > 0
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFFE65100),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        item.realTimeAvailableQty > 0
+                            ? 'Live Stock: ${item.realTimeAvailableQty} available'
+                            : 'Live Stock: 0 in store (Shortage)',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: item.realTimeAvailableQty > 0
+                              ? const Color(0xFF2E7D32)
+                              : const Color(0xFFE65100),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
 
-              // Quantity Stepper
-              Container(
+              final stepper = Container(
                 height: 34,
                 decoration: BoxDecoration(
                   color: _surfaceAlt.withValues(alpha: 0.5),
@@ -726,8 +729,30 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                     ),
                   ],
                 ),
-              ),
-            ],
+              );
+
+              if (isVeryNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    stockIndicator,
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: stepper,
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: stockIndicator),
+                  const SizedBox(width: 10),
+                  stepper,
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -735,9 +760,9 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
   }
 
   Widget _buildBottomBar(List<IndentDraftItemModel> items) {
-    final toSubmit = _selectedItemIds.isEmpty
-        ? items
-        : items.where((i) => _selectedItemIds.contains(i.itemId)).toList();
+    final toSubmit = items
+        .where((i) => !_unselectedItemIds.contains(i.itemId))
+        .toList();
     final totalUnits = toSubmit.fold(0, (sum, i) => sum + i.quantity);
 
     return Container(
@@ -784,12 +809,14 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               child: FilledButton.icon(
                 key: GuidedTourController.indentCartSubmitKey,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: _ink900,
                   foregroundColor: _surface,
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                onPressed: _isSubmitting ? null : () => _submitCombinedIndent(items),
+                onPressed: (_isSubmitting || toSubmit.isEmpty)
+                    ? null
+                    : () => _submitCombinedIndent(items),
                 icon: _isSubmitting
                     ? const SizedBox(
                         width: 16,

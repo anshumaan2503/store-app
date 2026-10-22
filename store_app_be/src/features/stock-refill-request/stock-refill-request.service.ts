@@ -733,7 +733,8 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
       for (let i = 0; i < eligibleItems.length; i++) {
         const entry = eligibleItems[i];
         const lineNumber = i + 1;
-        const lineIndentNumber = `${baseIndentNumber}-${String(lineNumber).padStart(2, '0')}`;
+        const lineIndentNumber =
+          i === 0 ? baseIndentNumber : await this.generateIndentNumber();
         const item = entry.item;
 
         const itemCode = (item.itemCode || '').trim();
@@ -1042,49 +1043,73 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
 
         if (maxCap > 0) {
           if (currentAvail >= maxCap) {
-            // Stock has already reached max capacity (e.g. from returns, reversions, or other receipts)
-            doc.status = 'REJECTED';
-            doc.reviewRemarks = dto?.reviewRemarks
-              ? `${dto.reviewRemarks} (Auto-cancelled: Current stock ${currentAvail} already meets/exceeds max capacity ${maxCap})`
-              : `Auto-cancelled: Current stock (${currentAvail}) already meets or exceeds maximum capacity (${maxCap}). Indent no longer required.`;
-            doc.reviewedBy = user?.name || user?.email || 'Store Approver';
-            doc.reviewedById = (user?._id || user?.uid || '').toString();
-            doc.reviewedAt = now;
-            doc.lastChangedOn = now;
-            doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
-            doc.timeline.push({
-              action: 'REJECTED',
-              title: 'Auto-Cancelled (Max Capacity Met)',
-              description: `Current available stock (${currentAvail}) already reaches max capacity (${maxCap}). Indent was cancelled to prevent overstocking.`,
-              actorName: doc.reviewedBy || 'Store Approver',
-              timestamp: now,
-            });
-            const saved = await doc.save();
-            return this.normalizeOutput(saved);
+            if (!dto?.overrideMaxCapacity) {
+              // Stock has already reached max capacity (e.g. from returns, reversions, or other receipts)
+              doc.status = 'REJECTED';
+              doc.reviewRemarks = dto?.reviewRemarks
+                ? `${dto.reviewRemarks} (Auto-cancelled: Current stock ${currentAvail} already meets/exceeds max capacity ${maxCap})`
+                : `Auto-cancelled: Current stock (${currentAvail}) already meets or exceeds maximum capacity (${maxCap}). Indent no longer required.`;
+              doc.reviewedBy = user?.name || user?.email || 'Store Approver';
+              doc.reviewedById = (user?._id || user?.uid || '').toString();
+              doc.reviewedAt = now;
+              doc.lastChangedOn = now;
+              doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+              doc.timeline.push({
+                action: 'REJECTED',
+                title: 'Auto-Cancelled (Max Capacity Met)',
+                description: `Current available stock (${currentAvail}) already reaches max capacity (${maxCap}). Indent was cancelled to prevent overstocking.`,
+                actorName: doc.reviewedBy || 'Store Approver',
+                timestamp: now,
+              });
+              const saved = await doc.save();
+              return this.normalizeOutput(saved);
+            } else {
+              // Explicit Go Ahead override authorized
+              doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+              doc.timeline.push({
+                action: 'MAX_CAPACITY_OVERRIDDEN',
+                title: 'Max Capacity Overridden (Go Ahead)',
+                description: `Store Approver explicitly authorized Go Ahead override exceeding max capacity (${maxCap}). Current stock: ${currentAvail}.`,
+                actorName: user?.name || user?.email || 'Store Approver',
+                timestamp: now,
+              });
+            }
           }
 
           const requestedQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
           if (currentAvail + requestedQty > maxCap) {
-            // Auto-cap the approved quantity to fill only up to max capacity!
-            const cappedQty = maxCap - currentAvail;
-            const oldQty = requestedQty;
-            doc.indentQty = cappedQty;
-            doc.requestedQty = cappedQty;
-            if (dto?.creditQty) {
-              dto.creditQty = Math.min(dto.creditQty, cappedQty);
-            }
-            doc.reviewRemarks = dto?.reviewRemarks
-              ? `${dto.reviewRemarks} (Auto-capped from ${oldQty} to ${cappedQty} to stay within max capacity ${maxCap})`
-              : `Approved with Auto-Cap: Quantity adjusted from ${oldQty} to ${cappedQty} ${doc.unitOfMeasure || 'units'} to not exceed maximum capacity (${maxCap}).`;
+            if (!dto?.overrideMaxCapacity) {
+              // Auto-cap the approved quantity to fill only up to max capacity!
+              const cappedQty = maxCap - currentAvail;
+              const oldQty = requestedQty;
+              doc.indentQty = cappedQty;
+              doc.requestedQty = cappedQty;
+              if (dto?.creditQty) {
+                dto.creditQty = Math.min(dto.creditQty, cappedQty);
+              }
+              doc.reviewRemarks = dto?.reviewRemarks
+                ? `${dto.reviewRemarks} (Auto-capped from ${oldQty} to ${cappedQty} to stay within max capacity ${maxCap})`
+                : `Approved with Auto-Cap: Quantity adjusted from ${oldQty} to ${cappedQty} ${doc.unitOfMeasure || 'units'} to not exceed maximum capacity (${maxCap}).`;
 
-            doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
-            doc.timeline.push({
-              action: 'QTY_AUTO_CAPPED',
-              title: 'Approved with Auto-Cap',
-              description: `Quantity auto-capped from ${oldQty} to ${cappedQty} to stay within maximum capacity (${maxCap}).`,
-              actorName: user?.name || user?.email || 'Store Approver',
-              timestamp: now,
-            });
+              doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+              doc.timeline.push({
+                action: 'QTY_AUTO_CAPPED',
+                title: 'Approved with Auto-Cap',
+                description: `Quantity auto-capped from ${oldQty} to ${cappedQty} to stay within maximum capacity (${maxCap}).`,
+                actorName: user?.name || user?.email || 'Store Approver',
+                timestamp: now,
+              });
+            } else {
+              // Explicit Go Ahead override authorized
+              doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+              doc.timeline.push({
+                action: 'MAX_CAPACITY_OVERRIDDEN',
+                title: 'Max Capacity Overridden (Go Ahead)',
+                description: `Store Approver explicitly authorized Go Ahead override approving full requested quantity (${requestedQty}) exceeding max capacity (${maxCap}).`,
+                actorName: user?.name || user?.email || 'Store Approver',
+                timestamp: now,
+              });
+            }
           }
         }
       }
@@ -1171,9 +1196,11 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
             const maxAllowed = maxCap * 1.05; // 5% buffer allowed as requested by manager
 
             if (currentStock + totalApprovedQty > maxAllowed) {
-              throw new BadRequestException(
-                `Cannot approve indents for "${item.itemName || item.itemCode}": Total selected quantity (${totalApprovedQty}) plus current stock (${currentStock}) exceeds maximum allowable quantity with buffer of ${maxAllowed.toFixed(1)} ${item.unit || 'units'} (Max: ${maxCap}). Please adjust the quantities (especially auto-refill) to stay within limit.`,
-              );
+              if (!dto.overrideMaxCapacity) {
+                throw new BadRequestException(
+                  `Cannot approve indents for "${item.itemName || item.itemCode}": Total selected quantity (${totalApprovedQty}) plus current stock (${currentStock}) exceeds maximum allowable quantity with buffer of ${maxAllowed.toFixed(1)} ${item.unit || 'units'} (Max: ${maxCap}). Please adjust the quantities or use Go Ahead to authorize exceeding max limit.`,
+                );
+              }
             }
           }
         }
@@ -1212,6 +1239,16 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
             action: 'QTY_ADJUSTED',
             title: 'Store Capacity Adjustment',
             description: `Store Incharge adjusted quantity from ${oldQty} to ${approvedQty} to maintain warehouse maximum capacity limit.`,
+            actorName: doc.storeApprovedBy,
+            timestamp: now,
+          });
+        }
+
+        if (dto.overrideMaxCapacity) {
+          doc.timeline.push({
+            action: 'MAX_CAPACITY_OVERRIDDEN',
+            title: 'Max Capacity Overridden (Go Ahead)',
+            description: `Store Incharge explicitly authorized Go Ahead override exceeding maximum warehouse capacity.`,
             actorName: doc.storeApprovedBy,
             timestamp: now,
           });
@@ -2041,6 +2078,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
           imageUrl: it.imageUrl || '',
           quantity: it.quantity,
           reason: it.reason || '',
+          indentType: it.indentType || 'STORE_REFILL',
           addedAt: new Date(),
         });
       }
@@ -2200,7 +2238,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
         const unit = (m?.unit || draftItem.unit || 'PCS').trim();
 
         const doc = new this.indentModel({
-          indentType: ((draftItem as any).indentType || '').trim() || 'ISSUE_SHORTAGE',
+          indentType: ((draftItem as any).indentType || '').trim() || 'STORE_REFILL',
           indentNumber,
           groupIndentNumber: baseIndentNumber,
           itemCode,

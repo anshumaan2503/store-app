@@ -624,6 +624,7 @@ class _StockRefillRequestsListViewState
     final actionColor =
         isApprove ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
     bool directStockIn = false;
+    bool overrideMaxCapacity = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -794,6 +795,69 @@ class _StockRefillRequestsListViewState
                           ],
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: overrideMaxCapacity
+                              ? const Color(0xFFFFF3E0)
+                              : const Color(0xFFFAF8EF),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: overrideMaxCapacity
+                                ? const Color(0xFFFFB74D)
+                                : _stroke,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.bolt_rounded,
+                              color: overrideMaxCapacity
+                                  ? const Color(0xFFE65100)
+                                  : _ink600,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Go Ahead (Authorize Exceeding Max Capacity)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: overrideMaxCapacity
+                                          ? const Color(0xFFE65100)
+                                          : _ink900,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Allows approval even if item stock reaches or exceeds maximum capacity',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: overrideMaxCapacity
+                                          ? const Color(0xFFE65100)
+                                          : _ink600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: overrideMaxCapacity,
+                              activeTrackColor: const Color(0xFFE65100),
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  overrideMaxCapacity = val;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 14),
                     const Text(
@@ -874,6 +938,7 @@ class _StockRefillRequestsListViewState
               req.id,
               reviewRemarks: remarksController.text,
               directStockIn: directStockIn,
+              overrideMaxCapacity: overrideMaxCapacity,
             )
           : await notifier.rejectRequest(
               req.id,
