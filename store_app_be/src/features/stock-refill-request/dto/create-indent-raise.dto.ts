@@ -231,3 +231,29 @@ export class ConsolidatedStoreApproveDto {
   overrideMaxCapacity?: boolean;
 }
 
+export class ApproveIndentItemDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  approvedQty?: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideMaxCapacity?: boolean;
+}
+
+export class ApproveWholeIndentDto {
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  overrideMaxCapacity?: boolean;
+}
+
+

@@ -14,6 +14,8 @@ export interface CartConfigData {
   monthEndRevertEnabled: boolean;
   indentApprovalRequired?: boolean;
   grnWorkflowEnabled?: boolean;
+  indentAutoCloseDays?: number;
+  indentAutoCloseEnabled?: boolean;
   updatedBy?: string;
   updatedAt?: Date;
 }
@@ -29,6 +31,8 @@ export class StoreCartService implements OnModuleInit {
     monthEndRevertEnabled: true,
     indentApprovalRequired: false,
     grnWorkflowEnabled: false,
+    indentAutoCloseDays: 30,
+    indentAutoCloseEnabled: true,
   };
 
   constructor(
@@ -69,6 +73,8 @@ export class StoreCartService implements OnModuleInit {
           monthEndRevertEnabled: created?.monthEndRevertEnabled !== false,
           indentApprovalRequired: Boolean(created?.indentApprovalRequired),
           grnWorkflowEnabled: Boolean(created?.grnWorkflowEnabled),
+          indentAutoCloseDays: Number(created?.indentAutoCloseDays) || 30,
+          indentAutoCloseEnabled: created?.indentAutoCloseEnabled !== false,
           updatedBy: created?.updatedBy,
           updatedAt: created?.updatedAt,
         };
@@ -81,6 +87,8 @@ export class StoreCartService implements OnModuleInit {
           monthEndRevertEnabled: cfg.monthEndRevertEnabled !== false,
           indentApprovalRequired: Boolean(cfg.indentApprovalRequired),
           grnWorkflowEnabled: Boolean(cfg.grnWorkflowEnabled),
+          indentAutoCloseDays: Number(cfg.indentAutoCloseDays) || 30,
+          indentAutoCloseEnabled: cfg.indentAutoCloseEnabled !== false,
           updatedBy: cfg.updatedBy,
           updatedAt: cfg.updatedAt,
         };
@@ -123,6 +131,15 @@ export class StoreCartService implements OnModuleInit {
     return this.cachedConfig.grnWorkflowEnabled === true;
   }
 
+  // Indent Auto-Close Switch & Duration (Days)
+  isIndentAutoCloseEnabled(): boolean {
+    return this.cachedConfig.indentAutoCloseEnabled !== false;
+  }
+
+  getIndentAutoCloseDays(): number {
+    return Math.max(1, Number(this.cachedConfig.indentAutoCloseDays) || 30);
+  }
+
   getConfigSync(): CartConfigData {
     return this.cachedConfig;
   }
@@ -139,6 +156,8 @@ export class StoreCartService implements OnModuleInit {
     monthEndRevertEnabled?: boolean;
     indentApprovalRequired?: boolean;
     grnWorkflowEnabled?: boolean;
+    indentAutoCloseDays?: number;
+    indentAutoCloseEnabled?: boolean;
     updatedBy?: string;
   }): Promise<CartConfigData> {
     const update: any = {};
@@ -163,6 +182,12 @@ export class StoreCartService implements OnModuleInit {
     if (dto.grnWorkflowEnabled !== undefined) {
       update.grnWorkflowEnabled = Boolean(dto.grnWorkflowEnabled);
     }
+    if (dto.indentAutoCloseDays !== undefined) {
+      update.indentAutoCloseDays = Math.max(1, Number(dto.indentAutoCloseDays) || 30);
+    }
+    if (dto.indentAutoCloseEnabled !== undefined) {
+      update.indentAutoCloseEnabled = Boolean(dto.indentAutoCloseEnabled);
+    }
     if (dto.updatedBy) {
       update.updatedBy = dto.updatedBy;
     }
@@ -184,6 +209,8 @@ export class StoreCartService implements OnModuleInit {
       monthEndRevertEnabled: doc?.monthEndRevertEnabled !== false,
       indentApprovalRequired: Boolean(doc?.indentApprovalRequired),
       grnWorkflowEnabled: Boolean(doc?.grnWorkflowEnabled),
+      indentAutoCloseDays: Number(doc?.indentAutoCloseDays) || 30,
+      indentAutoCloseEnabled: doc?.indentAutoCloseEnabled !== false,
       updatedBy: doc?.updatedBy,
       updatedAt: (doc as any)?.updatedAt || new Date(),
     };

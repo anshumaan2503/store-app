@@ -169,7 +169,7 @@ export class IndentRaise {
    */
   @Prop({
     default: 'PENDING',
-    enum: ['PENDING', 'DEPT_APPROVED', 'APPROVED', 'REJECTED'],
+    enum: ['PENDING', 'DEPT_APPROVED', 'APPROVED', 'REJECTED', 'CLOSED'],
     index: true,
   })
   status: string;

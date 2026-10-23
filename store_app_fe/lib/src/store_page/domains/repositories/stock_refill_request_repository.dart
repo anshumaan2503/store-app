@@ -429,13 +429,15 @@ class StockRefillRequestRepository {
   }
 
 
-  FutureEither<List<ConsolidatedStoreItemModel>> getPendingStoreConsolidation({
+  FutureEither<StoreConsolidationPayloadModel> getStoreConsolidationPayload({
     String? search,
+    String? groupBy,
   }) async {
     try {
       final token = await _getToken();
       final queryParams = <String, String>{
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (groupBy != null && groupBy.trim().isNotEmpty) 'groupBy': groupBy.trim(),
       };
 
       final res = await ref.read(httpClientProvider).get(
@@ -449,16 +451,131 @@ class StockRefillRequestRepository {
       final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        final list = (data['data'] as List? ?? [])
-            .map((e) => ConsolidatedStoreItemModel.fromJson(e as Map<String, dynamic>))
-            .toList();
-        return Right(list);
+        final payload = StoreConsolidationPayloadModel.fromJson(data['data']);
+        return Right(payload);
       }
 
       final errorMsg = _extractErrorMessage(data, fallback: 'Failed to fetch pending store consolidation');
       return Left(Failure(errorMsg, StackTrace.current));
     } catch (e, st) {
-      log('getPendingStoreConsolidation error: $e', stackTrace: st);
+      log('getStoreConsolidationPayload error: $e', stackTrace: st);
+      return Left(Failure(e.toString(), st));
+    }
+  }
+
+  FutureEither<List<ConsolidatedStoreItemModel>> getPendingStoreConsolidation({
+    String? search,
+  }) async {
+    final payloadRes = await getStoreConsolidationPayload(search: search);
+    return payloadRes.fold(
+      (l) => Left(l),
+      (r) => Right(r.itemWise),
+    );
+  }
+
+  FutureEither<Map<String, dynamic>> approveIndentItem({
+    required String id,
+    num? approvedQty,
+    String? remarks,
+    bool overrideMaxCapacity = false,
+  }) async {
+    try {
+      final token = await _getToken();
+      final body = {
+        if (approvedQty != null && approvedQty > 0) 'approvedQty': approvedQty,
+        if (remarks != null && remarks.trim().isNotEmpty) 'remarks': remarks.trim(),
+        if (overrideMaxCapacity) 'overrideMaxCapacity': true,
+      };
+
+      final res = await ref.read(httpClientProvider).post(
+            Uri.http(Constants.serverUrl, 'api/store/indents/approve-item/$id'),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+            body: json.encode(body),
+          );
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return Right(data);
+      }
+
+      final errorMsg = _extractErrorMessage(data, fallback: 'Failed to approve indent item');
+      return Left(Failure(errorMsg, StackTrace.current));
+    } catch (e, st) {
+      log('approveIndentItem error: $e', stackTrace: st);
+      return Left(Failure(e.toString(), st));
+    }
+  }
+
+  FutureEither<Map<String, dynamic>> rejectWholeIndent({
+    required String indentNumber,
+    String? remarks,
+  }) async {
+    try {
+      final token = await _getToken();
+      final body = {
+        if (remarks != null && remarks.trim().isNotEmpty) 'remarks': remarks.trim(),
+      };
+
+      final encodedNum = Uri.encodeComponent(indentNumber);
+      final res = await ref.read(httpClientProvider).post(
+            Uri.http(Constants.serverUrl, 'api/store/indents/reject-whole-indent/$encodedNum'),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+            body: json.encode(body),
+          );
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return Right(data);
+      }
+
+      final errorMsg = _extractErrorMessage(data, fallback: 'Failed to reject whole indent');
+      return Left(Failure(errorMsg, StackTrace.current));
+    } catch (e, st) {
+      log('rejectWholeIndent error: $e', stackTrace: st);
+      return Left(Failure(e.toString(), st));
+    }
+  }
+
+  FutureEither<Map<String, dynamic>> approveWholeIndent({
+    required String indentNumber,
+    String? remarks,
+    bool overrideMaxCapacity = false,
+  }) async {
+    try {
+      final token = await _getToken();
+      final body = {
+        if (remarks != null && remarks.trim().isNotEmpty) 'remarks': remarks.trim(),
+        if (overrideMaxCapacity) 'overrideMaxCapacity': true,
+      };
+
+      final encodedNum = Uri.encodeComponent(indentNumber);
+      final res = await ref.read(httpClientProvider).post(
+            Uri.http(Constants.serverUrl, 'api/store/indents/approve-whole-indent/$encodedNum'),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+            body: json.encode(body),
+          );
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return Right(data);
+      }
+
+      final errorMsg = _extractErrorMessage(data, fallback: 'Failed to approve whole indent');
+      return Left(Failure(errorMsg, StackTrace.current));
+    } catch (e, st) {
+      log('approveWholeIndent error: $e', stackTrace: st);
       return Left(Failure(e.toString(), st));
     }
   }

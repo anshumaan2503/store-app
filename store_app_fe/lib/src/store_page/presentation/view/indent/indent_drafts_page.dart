@@ -18,7 +18,9 @@ const _bgTop = Color(0xFFFFFFF3);
 const _bgBottom = _surfaceAlt;
 
 class IndentDraftsPage extends ConsumerStatefulWidget {
-  const IndentDraftsPage({super.key});
+  const IndentDraftsPage({super.key, this.isEmbedded = false});
+
+  final bool isEmbedded;
 
   @override
   ConsumerState<IndentDraftsPage> createState() => _IndentDraftsPageState();
@@ -104,21 +106,61 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               TextField(
                 controller: controller,
                 keyboardType: TextInputType.number,
+                cursorColor: _ink900,
+                style: const TextStyle(
+                  color: _ink900,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Quantity Needed',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  labelStyle: const TextStyle(color: _ink700, fontSize: 13, fontWeight: FontWeight.w600),
+                  floatingLabelStyle: const TextStyle(color: _ink900, fontWeight: FontWeight.w700),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   filled: true,
-                  fillColor: _surfaceAlt.withValues(alpha: 0.3),
+                  fillColor: _surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _ink900, width: 1.8),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: reasonController,
+                cursorColor: _ink900,
+                style: const TextStyle(
+                  color: _ink900,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Justification / Reason (Optional)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  labelStyle: const TextStyle(color: _ink700, fontSize: 13, fontWeight: FontWeight.w600),
+                  floatingLabelStyle: const TextStyle(color: _ink900, fontWeight: FontWeight.w700),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   filled: true,
-                  fillColor: _surfaceAlt.withValues(alpha: 0.3),
+                  fillColor: _surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _ink900, width: 1.8),
+                  ),
                 ),
               ),
             ],
@@ -178,10 +220,15 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE0E7FF),
+                  color: _surfaceAlt,
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _stroke),
                 ),
-                child: const Icon(Icons.playlist_add_check_circle_rounded, color: Color(0xFF3730A3)),
+                child: const Icon(
+                  Icons.playlist_add_check_circle_rounded,
+                  color: _ink900,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -203,12 +250,33 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               const SizedBox(height: 14),
               TextField(
                 controller: reasonCtrl,
+                cursorColor: _ink900,
+                style: const TextStyle(
+                  color: _ink900,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Requisition Remarks (Optional)',
+                  labelStyle: const TextStyle(color: _ink700, fontSize: 13, fontWeight: FontWeight.w600),
+                  floatingLabelStyle: const TextStyle(color: _ink900, fontWeight: FontWeight.w700),
                   hintText: 'e.g. Monthly department replenishment',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  hintStyle: const TextStyle(color: _ink600, fontSize: 13),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   filled: true,
-                  fillColor: _surfaceAlt.withValues(alpha: 0.3),
+                  fillColor: _surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _stroke, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _ink900, width: 1.8),
+                  ),
                 ),
               ),
             ],
@@ -216,15 +284,16 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: _ink600)),
+              child: const Text('Cancel', style: TextStyle(color: _ink600, fontWeight: FontWeight.w700)),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: _ink900,
                 foregroundColor: _surface,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Confirm & Submit'),
+              child: const Text('Confirm & Submit', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ],
         );
@@ -264,6 +333,101 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
 
     final allSelected = items.isNotEmpty && _unselectedItemIds.isEmpty;
 
+    final bodyContent = Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_bgTop, _bgBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Column(
+        children: [
+          if (widget.isEmbedded && items.isNotEmpty)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: _surface,
+              child: Row(
+                children: [
+                  Text(
+                    '${items.length} item(s) in cart',
+                    style: const TextStyle(
+                      color: _ink900,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Refresh Real-Time Stock',
+                    icon: const Icon(Icons.refresh_rounded,
+                        size: 20, color: _ink900),
+                    onPressed: () => ref
+                        .read(indentDraftControllerProvider.notifier)
+                        .fetchDrafts(),
+                  ),
+                  IconButton(
+                    tooltip: 'Clear All Drafts',
+                    icon: const Icon(Icons.delete_sweep_outlined,
+                        size: 20, color: _ink700),
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Clear Indent Cart?'),
+                          content: const Text(
+                              'Are you sure you want to remove all unsubmitted indent items from your cart?'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel')),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red.shade700,
+                                foregroundColor: _surface,
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Clear All'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await ref
+                            .read(indentDraftControllerProvider.notifier)
+                            .clearDrafts();
+                        _unselectedItemIds.clear();
+                        _showSnack('Indent cart cleared');
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: state.isLoading && items.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : items.isEmpty
+                    ? _buildEmptyState()
+                    : _buildContent(items, allSelected),
+          ),
+        ],
+      ),
+    );
+
+    if (widget.isEmbedded) {
+      return Container(
+        color: _surface,
+        child: Column(
+          children: [
+            Expanded(child: bodyContent),
+            if (items.isNotEmpty) _buildBottomBar(items),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: _surface,
       appBar: AppBar(
@@ -275,12 +439,16 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
           children: [
             const Text(
               'Indent Cart',
-              style: TextStyle(color: _ink900, fontWeight: FontWeight.w900, fontSize: 17),
+              style: TextStyle(
+                  color: _ink900,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17),
             ),
             if (items.isNotEmpty) ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE0E7FF),
                   borderRadius: BorderRadius.circular(12),
@@ -301,20 +469,26 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
           IconButton(
             tooltip: 'Refresh Real-Time Stock',
             icon: const Icon(Icons.refresh_rounded, color: _ink900),
-            onPressed: () => ref.read(indentDraftControllerProvider.notifier).fetchDrafts(),
+            onPressed: () => ref
+                .read(indentDraftControllerProvider.notifier)
+                .fetchDrafts(),
           ),
           if (items.isNotEmpty)
             IconButton(
               tooltip: 'Clear All Drafts',
-              icon: const Icon(Icons.delete_sweep_outlined, color: _ink700),
+              icon:
+                  const Icon(Icons.delete_sweep_outlined, color: _ink700),
               onPressed: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Clear Indent Cart?'),
-                    content: const Text('Are you sure you want to remove all unsubmitted indent items from your cart?'),
+                    content: const Text(
+                        'Are you sure you want to remove all unsubmitted indent items from your cart?'),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel')),
                       FilledButton(
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.red.shade700,
@@ -327,7 +501,9 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                   ),
                 );
                 if (confirm == true) {
-                  await ref.read(indentDraftControllerProvider.notifier).clearDrafts();
+                  await ref
+                      .read(indentDraftControllerProvider.notifier)
+                      .clearDrafts();
                   _unselectedItemIds.clear();
                   _showSnack('Indent cart cleared');
                 }
@@ -335,23 +511,8 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
             ),
         ],
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_bgTop, _bgBottom],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: state.isLoading && items.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : items.isEmpty
-                ? _buildEmptyState()
-                : _buildContent(items, allSelected),
-      ),
-      bottomNavigationBar: items.isEmpty
-          ? null
-          : _buildBottomBar(items),
+      body: bodyContent,
+      bottomNavigationBar: items.isEmpty ? null : _buildBottomBar(items),
     );
   }
 
@@ -401,10 +562,16 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
               style: FilledButton.styleFrom(
                 backgroundColor: _ink900,
                 foregroundColor: _surface,
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                if (Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+              },
               icon: const Icon(Icons.arrow_back_rounded, size: 18),
               label: const Text('Browse Store Items'),
             ),

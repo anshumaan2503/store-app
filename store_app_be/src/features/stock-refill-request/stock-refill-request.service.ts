@@ -27,6 +27,8 @@ import {
   ReviewIndentRaiseDto,
   UpdateIndentQtyDto,
   ConsolidatedStoreApproveDto,
+  ApproveIndentItemDto,
+  ApproveWholeIndentDto,
 } from './dto/create-indent-raise.dto';
 import {
   AddIndentDraftItemDto,
@@ -84,6 +86,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
       try {
         console.log('[EOD Auto-Indent Scheduler] Running 11:59 PM nightly auto-indent job...');
         await this.runEndOfDayAutoIndentScheduler();
+        await this.autoCloseExpiredIndents();
       } catch (err) {
         console.error('[EOD Auto-Indent Scheduler] Error during nightly auto-indent execution:', err);
       } finally {
@@ -831,6 +834,61 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Auto-Close Indents older than the Super-Admin configured timeout (default: 30 days / 1 month).
+   * Runs nightly as part of the store housekeeping schedule, and can also be triggered on-demand.
+   */
+  async autoCloseExpiredIndents(): Promise<{
+    closedCount: number;
+    cutoffDate: Date;
+    days: number;
+    enabled: boolean;
+  }> {
+    const isEnabled = this.storeCartService?.isIndentAutoCloseEnabled() ?? true;
+    const days = this.storeCartService?.getIndentAutoCloseDays() ?? 30;
+
+    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    if (!isEnabled) {
+      return { closedCount: 0, cutoffDate, days, enabled: false };
+    }
+
+    const filter: any = {
+      status: { $in: ['PENDING', 'DEPT_APPROVED'] },
+      stockCredited: { $ne: true },
+      createdAt: { $lte: cutoffDate },
+    };
+
+    const staleIndents = await this.indentModel.find(filter).exec();
+    if (!staleIndents || staleIndents.length === 0) {
+      return { closedCount: 0, cutoffDate, days, enabled: true };
+    }
+
+    const now = new Date();
+    for (const ind of staleIndents) {
+      ind.status = 'CLOSED';
+      ind.reviewRemarks = `Auto-closed by system: Indent remained unfulfilled for over ${days} days (1 month expiry policy).`;
+      ind.reviewedBy = 'SYSTEM (Auto-Close Policy)';
+      ind.reviewedById = 'system';
+      ind.reviewedAt = now;
+      ind.lastChangedOn = now;
+      ind.timeline = Array.isArray(ind.timeline) ? ind.timeline : [];
+      ind.timeline.push({
+        action: 'CLOSED',
+        title: 'Auto-Closed after 1 Month',
+        description: `Indent automatically closed after exceeding the allowable ${days}-day window without fulfillment.`,
+        actorName: 'SYSTEM',
+        timestamp: now,
+      });
+      await ind.save();
+    }
+
+    console.log(
+      `[Auto-Close Policy] Successfully closed ${staleIndents.length} expired indents older than ${days} days (${cutoffDate.toISOString()}).`,
+    );
+    return { closedCount: staleIndents.length, cutoffDate, days, enabled: true };
+  }
+
+  /**
    * Retrieves all items currently qualifying as "indent-ready" (Available + Cart <= MinStock)
    * awaiting the 11:59 PM End-of-Day batch scheduler.
    */
@@ -1239,7 +1297,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
             action: 'QTY_ADJUSTED',
             title: 'Store Capacity Adjustment',
             description: `Store Incharge adjusted quantity from ${oldQty} to ${approvedQty} to maintain warehouse maximum capacity limit.`,
-            actorName: doc.storeApprovedBy,
+            actorName: doc.storeApprovedBy || 'Store Approver',
             timestamp: now,
           });
         }
@@ -1249,7 +1307,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
             action: 'MAX_CAPACITY_OVERRIDDEN',
             title: 'Max Capacity Overridden (Go Ahead)',
             description: `Store Incharge explicitly authorized Go Ahead override exceeding maximum warehouse capacity.`,
-            actorName: doc.storeApprovedBy,
+            actorName: doc.storeApprovedBy || 'Store Approver',
             timestamp: now,
           });
         }
@@ -1258,7 +1316,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
           action: 'APPROVED',
           title: 'Store Approved (Consolidated)',
           description: `Consolidated & approved by Store Incharge (${doc.storeApprovedBy}). Available for GRN receiving & putaway.`,
-          actorName: doc.storeApprovedBy,
+          actorName: doc.storeApprovedBy || 'Store Approver',
           timestamp: now,
         });
 
@@ -1276,46 +1334,133 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Retrieves indents waiting for Store Incharge consolidation & approval, grouped by item.
+   * Retrieves indents waiting for Store Incharge consolidation & approval.
+   * Supports both Indent-Wise (Hierarchical Requisitions) and Item-Wise aggregations.
    */
-  async getPendingStoreConsolidation(search?: string) {
+  async getPendingStoreConsolidation(search?: string, groupBy?: string) {
     const filter: any = {
-      $or: [
-        { status: 'DEPT_APPROVED' },
-        { isAutoRefill: true, status: 'PENDING' },
-      ],
+      status: { $in: ['PENDING', 'DEPT_APPROVED'] },
       stockCredited: { $ne: true },
     };
 
-    const indents = await this.indentModel
+    const activePending = await this.indentModel
       .find(filter)
       .sort({ createdAt: 1 })
       .lean()
       .exec();
 
-    // Group by item
-    const itemMap = new Map<string, { item: any; indents: any[] }>();
+    // Collect all group keys (groupIndentNumber or indentNumber)
+    const groupKeySet = new Set<string>();
+    for (const doc of activePending) {
+      const key = (doc as any).groupIndentNumber || doc.indentNumber;
+      if (key) groupKeySet.add(key);
+    }
 
-    for (const ind of indents) {
-      const itemIdStr = String(ind.itemId);
+    // Query all sibling items for these active groups so partially approved indents show both approved & pending items
+    const allGroupDocs: any[] = groupKeySet.size > 0
+      ? await this.indentModel
+          .find({
+            $or: [
+              { groupIndentNumber: { $in: Array.from(groupKeySet) } },
+              { indentNumber: { $in: Array.from(groupKeySet) } },
+            ],
+            stockCredited: { $ne: true },
+            status: { $ne: 'REJECTED' },
+          })
+          .sort({ createdAt: 1, lineNumber: 1 })
+          .lean()
+          .exec()
+      : [];
+
+    // Fetch all item masters in a single batch query for maximum performance (O(1) lookups)
+    const itemIds = Array.from(new Set(allGroupDocs.map((d: any) => d.itemId).filter(Boolean)));
+    const itemMasters = itemIds.length > 0
+      ? await this.itemModel.find({ _id: { $in: itemIds } }).lean().exec()
+      : [];
+    const itemMasterMap = new Map<string, any>(itemMasters.map((it: any) => [it._id.toString(), it]));
+
+    // 1. Build Indent-Wise Grouping
+    const indentGroupMap = new Map<string, any>();
+    for (const doc of allGroupDocs) {
+      const groupKey = doc.groupIndentNumber || doc.indentNumber || doc._id.toString();
+      if (!indentGroupMap.has(groupKey)) {
+        indentGroupMap.set(groupKey, {
+          groupIndentNumber: groupKey,
+          indentNumber: doc.indentNumber || groupKey,
+          department: doc.department || 'Store Refill',
+          requestedBy: doc.requestedBy || 'Store User',
+          requesterRole: doc.requesterRole || 'Staff',
+          isAutoRefill: !!doc.isAutoRefill,
+          createdAt: doc.createdOn || doc.createdAt,
+          items: [],
+        });
+      }
+
+      const itemMaster = itemMasterMap.get(String(doc.itemId));
+      const currentStock = Number(itemMaster?.stockAvailableQuantity) || Number(doc.currentAvailableQty) || 0;
+      const maxCapacity = Number(itemMaster?.maxCapacity) || 0;
+      const maxAllowedBuffer = maxCapacity > 0 ? Number((maxCapacity * 1.05).toFixed(1)) : 0;
+      const requestedQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
+
+      indentGroupMap.get(groupKey).items.push({
+        ...this.normalizeOutput(doc),
+        itemCode: itemMaster?.itemCode || doc.itemCode || '',
+        itemName: itemMaster?.itemName || doc.itemName || doc.itemDescription || '',
+        unit: itemMaster?.unit || doc.unitOfMeasure || doc.unit || 'units',
+        currentStock,
+        maxCapacity,
+        maxAllowedBuffer,
+        exceedsMax: maxCapacity > 0 && (currentStock + requestedQty) > maxCapacity,
+        exceedsBuffer: maxCapacity > 0 && (currentStock + requestedQty) > maxAllowedBuffer,
+        isApproved: doc.status === 'APPROVED',
+      });
+    }
+
+    const indentWise = Array.from(indentGroupMap.values()).map((group: any) => {
+      const totalItems = group.items.length;
+      const approvedItemsCount = group.items.filter((i: any) => i.isApproved).length;
+      const pendingItemsCount = totalItems - approvedItemsCount;
+      const isFullyApproved = totalItems > 0 && approvedItemsCount === totalItems;
+      const totalRequestedQty = group.items.reduce(
+        (sum: number, i: any) => sum + (Number(i.indentQty ?? i.requestedQty) || 0),
+        0,
+      );
+      const hasCapacityWarning = group.items.some((i: any) => i.exceedsBuffer);
+
+      return {
+        ...group,
+        totalItems,
+        approvedItemsCount,
+        pendingItemsCount,
+        isFullyApproved,
+        totalRequestedQty,
+        hasCapacityWarning,
+        status: isFullyApproved ? 'APPROVED' : approvedItemsCount > 0 ? 'PARTIALLY_APPROVED' : 'PENDING',
+      };
+    });
+
+    // 2. Build Item-Wise Grouping
+    const itemMap = new Map<string, { item: any; indents: any[] }>();
+    for (const doc of allGroupDocs) {
+      const itemIdStr = String(doc.itemId);
       if (!itemMap.has(itemIdStr)) {
-        const item = await this.itemModel.findById(ind.itemId).lean().exec();
+        const itemMaster = itemMasterMap.get(itemIdStr);
         itemMap.set(itemIdStr, {
-          item: item || {
-            _id: ind.itemId,
-            itemName: ind.itemName || ind.itemDescription || 'Unknown Item',
-            itemCode: ind.itemCode || '',
-            unit: ind.unitOfMeasure || ind.unit || 'units',
-            stockAvailableQuantity: ind.currentAvailableQty || 0,
+          item: itemMaster || {
+            _id: doc.itemId,
+            itemName: doc.itemName || doc.itemDescription || 'Unknown Item',
+            itemCode: doc.itemCode || '',
+            unit: doc.unitOfMeasure || doc.unit || 'units',
+            stockAvailableQuantity: doc.currentAvailableQty || 0,
             maxCapacity: 0,
           },
           indents: [],
         });
       }
-      itemMap.get(itemIdStr)!.indents.push(this.normalizeOutput(ind));
+      itemMap.get(itemIdStr)!.indents.push(this.normalizeOutput(doc));
     }
 
-    const result = Array.from(itemMap.values()).map(({ item, indents }) => {
+    const itemWise = Array.from(itemMap.values()).map(({ item, indents }) => {
       const currentStock = Number(item.stockAvailableQuantity) || 0;
       const maxCapacity = Number(item.maxCapacity) || 0;
       const maxAllowedBuffer = maxCapacity > 0 ? Number((maxCapacity * 1.05).toFixed(1)) : 0;
@@ -1339,16 +1484,350 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
+    // Search filtering
+    let filteredIndentWise = indentWise;
+    let filteredItemWise = itemWise;
     if (search && search.trim()) {
       const q = search.trim().toLowerCase();
-      return result.filter(
-        (r) =>
-          r.itemName.toLowerCase().includes(q) ||
-          r.itemCode.toLowerCase().includes(q),
+      filteredIndentWise = indentWise.filter((grp: any) =>
+        (grp.groupIndentNumber || '').toLowerCase().includes(q) ||
+        (grp.indentNumber || '').toLowerCase().includes(q) ||
+        (grp.requestedBy || '').toLowerCase().includes(q) ||
+        (grp.department || '').toLowerCase().includes(q) ||
+        grp.items.some((it: any) =>
+          (it.itemName || '').toLowerCase().includes(q) ||
+          (it.itemCode || '').toLowerCase().includes(q)
+        )
+      );
+
+      filteredItemWise = itemWise.filter((it: any) =>
+        (it.itemName || '').toLowerCase().includes(q) ||
+        (it.itemCode || '').toLowerCase().includes(q)
       );
     }
 
-    return result;
+    // Support caller-requested single grouping or unified payload
+    if (groupBy === 'item') {
+      return filteredItemWise;
+    }
+    if (groupBy === 'indent') {
+      return filteredIndentWise;
+    }
+
+    return {
+      indentWise: filteredIndentWise,
+      itemWise: filteredItemWise,
+      summary: {
+        totalIndents: filteredIndentWise.length,
+        totalPendingItems: filteredIndentWise.reduce((sum: number, g: any) => sum + g.pendingItemsCount, 0),
+      },
+    };
+  }
+
+  /**
+   * Approves a single indent item individually.
+   * If all items belonging to this indent requisition become approved, the entire indent is automatically marked approved!
+   */
+  async approveIndentItem(id: string, dto: ApproveIndentItemDto, user: any) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid indent request ID');
+    }
+    const doc = await this.indentModel.findById(id);
+    if (!doc) {
+      throw new NotFoundException('Indent item not found');
+    }
+    if (doc.status === 'REJECTED') {
+      throw new BadRequestException('Cannot approve a rejected indent item');
+    }
+    if (doc.status === 'APPROVED') {
+      return {
+        success: true,
+        message: 'This item is already approved',
+        data: this.normalizeOutput(doc),
+        indentFullyApproved: false,
+      };
+    }
+
+    const now = new Date();
+    const approvedQty = Number(dto?.approvedQty ?? doc.indentQty ?? doc.requestedQty ?? 0);
+    if (approvedQty <= 0) {
+      throw new BadRequestException('Approved quantity must be greater than zero');
+    }
+
+    // Capacity validation
+    if (doc.itemId) {
+      const item = await this.itemModel.findById(doc.itemId);
+      if (item) {
+        const maxCap = typeof item.maxCapacity === 'number' && item.maxCapacity > 0 ? item.maxCapacity : 0;
+        if (maxCap > 0) {
+          const currentStock = Number(item.stockAvailableQuantity) || 0;
+          const maxAllowed = maxCap * 1.05; // 5% buffer
+          if (currentStock + approvedQty > maxAllowed) {
+            if (!dto?.overrideMaxCapacity) {
+              throw new BadRequestException(
+                `Cannot approve item "${item.itemName || item.itemCode}": Current stock (${currentStock}) + Approved qty (${approvedQty}) exceeds maximum allowable quantity with buffer of ${maxAllowed.toFixed(1)} ${item.unit || 'units'} (Max: ${maxCap}). Use Go Ahead to override.`,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    const oldQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
+    const qtyChanged = oldQty !== approvedQty;
+    if (qtyChanged) {
+      doc.originalIndentQty = doc.originalIndentQty || oldQty;
+      doc.indentQty = approvedQty;
+      doc.requestedQty = approvedQty;
+    }
+
+    doc.status = 'APPROVED';
+    doc.storeApprovedAt = now;
+    doc.storeApprovedBy = user?.name || user?.email || 'Store Approver';
+    doc.storeApprovedById = (user?._id || user?.uid || '').toString();
+    doc.reviewedAt = now;
+    doc.reviewedBy = doc.storeApprovedBy;
+    doc.reviewedById = doc.storeApprovedById;
+    doc.lastChangedOn = now;
+
+    if (dto?.remarks) {
+      doc.reviewRemarks = dto.remarks.trim();
+    }
+
+    doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+    if (qtyChanged) {
+      doc.timeline.push({
+        action: 'QTY_ADJUSTED',
+        title: 'Store Capacity Adjustment',
+        description: `Quantity adjusted from ${oldQty} to ${approvedQty} by Store Incharge.`,
+        actorName: doc.storeApprovedBy || 'Store Approver',
+        timestamp: now,
+      });
+    }
+    if (dto?.overrideMaxCapacity) {
+      doc.timeline.push({
+        action: 'MAX_CAPACITY_OVERRIDDEN',
+        title: 'Max Capacity Overridden (Go Ahead)',
+        description: `Store Incharge explicitly authorized Go Ahead override exceeding maximum warehouse capacity.`,
+        actorName: doc.storeApprovedBy || 'Store Approver',
+        timestamp: now,
+      });
+    }
+    doc.timeline.push({
+      action: 'APPROVED',
+      title: 'Store Approved (Item)',
+      description: dto?.remarks || `Item approved by Store Incharge (${doc.storeApprovedBy}). Available for GRN receiving.`,
+      actorName: doc.storeApprovedBy || 'Store Approver',
+      timestamp: now,
+    });
+
+    const saved = await doc.save();
+
+    // Check sibling items for automatic whole-indent approval
+    const groupKey = saved.groupIndentNumber || saved.indentNumber;
+    let allSiblingsApproved = false;
+    let siblingTotal = 1;
+    let siblingApproved = 1;
+
+    if (groupKey) {
+      const siblings = await this.indentModel.find({
+        $or: [
+          { groupIndentNumber: groupKey },
+          { indentNumber: groupKey },
+        ],
+        status: { $ne: 'REJECTED' },
+        stockCredited: { $ne: true },
+      });
+
+      siblingTotal = siblings.length;
+      siblingApproved = siblings.filter((s: any) => s.status === 'APPROVED').length;
+      allSiblingsApproved = siblingTotal > 0 && siblingApproved === siblingTotal;
+
+      if (allSiblingsApproved) {
+        for (const sib of siblings) {
+          sib.timeline = Array.isArray(sib.timeline) ? sib.timeline : [];
+          sib.timeline.push({
+            action: 'INDENT_FULLY_APPROVED',
+            title: 'Indent Automatically Fully Approved',
+            description: `All ${siblingTotal} item(s) in Indent ${groupKey} are now approved. Requisition is ready for complete GRN receiving.`,
+            actorName: doc.storeApprovedBy || 'Store Approver',
+            timestamp: now,
+          });
+          await sib.save();
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: allSiblingsApproved
+        ? `Item approved. All ${siblingTotal} items in Indent ${groupKey} are now approved! Indent is automatically fully approved.`
+        : `Item approved successfully (${siblingApproved}/${siblingTotal} items approved in Indent ${groupKey || saved.indentNumber}).`,
+      indentFullyApproved: allSiblingsApproved,
+      groupIndentNumber: groupKey || saved.indentNumber,
+      approvedCount: siblingApproved,
+      totalCount: siblingTotal,
+      data: this.normalizeOutput(saved),
+    };
+  }
+
+  /**
+   * Approves the whole indent requisition and all its pending line items in one operation.
+   */
+  async approveWholeIndent(indentKey: string, dto: ApproveWholeIndentDto, user: any) {
+    if (!indentKey || !indentKey.trim()) {
+      throw new BadRequestException('Indent number or group key is required');
+    }
+    const cleanKey = indentKey.trim();
+
+    const docs = await this.indentModel.find({
+      $or: [
+        { groupIndentNumber: cleanKey },
+        { indentNumber: cleanKey },
+      ],
+      status: { $ne: 'REJECTED' },
+      stockCredited: { $ne: true },
+    });
+
+    if (!docs || docs.length === 0) {
+      throw new NotFoundException(`No active indent found for "${cleanKey}"`);
+    }
+
+    const now = new Date();
+    const approverName = user?.name || user?.email || 'Store Approver';
+    const approverId = (user?._id || user?.uid || '').toString();
+
+    const pendingDocs = docs.filter((d: any) => d.status !== 'APPROVED');
+    if (pendingDocs.length === 0) {
+      return {
+        success: true,
+        message: `All items in Indent ${cleanKey} are already approved.`,
+        count: docs.length,
+        indentNumber: cleanKey,
+      };
+    }
+
+    // Validate capacities for all pending items
+    for (const doc of pendingDocs) {
+      if (doc.itemId) {
+        const item = await this.itemModel.findById(doc.itemId);
+        if (item) {
+          const maxCap = typeof item.maxCapacity === 'number' && item.maxCapacity > 0 ? item.maxCapacity : 0;
+          if (maxCap > 0) {
+            const currentStock = Number(item.stockAvailableQuantity) || 0;
+            const requestedQty = Number(doc.indentQty ?? doc.requestedQty ?? 0);
+            const maxAllowed = maxCap * 1.05;
+            if (currentStock + requestedQty > maxAllowed) {
+              if (!dto?.overrideMaxCapacity) {
+                throw new BadRequestException(
+                  `Cannot approve indent: Item "${item.itemName || item.itemCode}" (Current Stock: ${currentStock}, Indent: ${requestedQty}) exceeds maximum allowable quantity with buffer of ${maxAllowed.toFixed(1)} ${item.unit || 'units'} (Max: ${maxCap}). Use Go Ahead to override.`,
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Approve all pending docs
+    for (const doc of pendingDocs) {
+      doc.status = 'APPROVED';
+      doc.storeApprovedAt = now;
+      doc.storeApprovedBy = approverName;
+      doc.storeApprovedById = approverId;
+      doc.reviewedAt = now;
+      doc.reviewedBy = approverName;
+      doc.reviewedById = approverId;
+      doc.lastChangedOn = now;
+
+      if (dto?.remarks) {
+        doc.reviewRemarks = dto.remarks.trim();
+      }
+
+      doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+      if (dto?.overrideMaxCapacity) {
+        doc.timeline.push({
+          action: 'MAX_CAPACITY_OVERRIDDEN',
+          title: 'Max Capacity Overridden (Go Ahead)',
+          description: `Store Incharge authorized Go Ahead override exceeding maximum capacity during whole-indent approval.`,
+          actorName: approverName,
+          timestamp: now,
+        });
+      }
+      doc.timeline.push({
+        action: 'APPROVED',
+        title: 'Indent Approved (Whole Indent)',
+        description: dto?.remarks || `Whole indent ${cleanKey} approved by Store Incharge (${approverName}). All items ready for GRN receipt.`,
+        actorName: approverName,
+        timestamp: now,
+      });
+
+      await doc.save();
+    }
+
+    return {
+      success: true,
+      message: `Indent ${cleanKey} and all ${pendingDocs.length} pending items have been approved! Indent is fully approved.`,
+      count: docs.length,
+      newlyApprovedCount: pendingDocs.length,
+      indentNumber: cleanKey,
+    };
+  }
+
+  /**
+   * Rejects the whole indent requisition and all its pending items.
+   */
+  async rejectWholeIndent(indentKey: string, dto: { remarks?: string }, user: any) {
+    if (!indentKey || !indentKey.trim()) {
+      throw new BadRequestException('Indent number or group key is required');
+    }
+    const cleanKey = indentKey.trim();
+
+    const docs = await this.indentModel.find({
+      $or: [
+        { groupIndentNumber: cleanKey },
+        { indentNumber: cleanKey },
+      ],
+      stockCredited: { $ne: true },
+      status: { $in: ['PENDING', 'DEPT_APPROVED'] },
+    });
+
+    if (!docs || docs.length === 0) {
+      throw new NotFoundException(`No pending indents found for "${cleanKey}" to reject`);
+    }
+
+    const now = new Date();
+    const rejectorName = user?.name || user?.email || 'Store Approver';
+    const rejectorId = (user?._id || user?.uid || '').toString();
+
+    for (const doc of docs) {
+      doc.status = 'REJECTED';
+      doc.reviewedBy = rejectorName;
+      doc.reviewedById = rejectorId;
+      doc.reviewedAt = now;
+      doc.lastChangedOn = now;
+      if (dto?.remarks) {
+        doc.reviewRemarks = dto.remarks.trim();
+      }
+
+      doc.timeline = Array.isArray(doc.timeline) ? doc.timeline : [];
+      doc.timeline.push({
+        action: 'REJECTED',
+        title: 'Indent Rejected (Whole Indent)',
+        description: dto?.remarks || `Whole indent ${cleanKey} was rejected by Store Approver (${rejectorName}).`,
+        actorName: rejectorName,
+        timestamp: now,
+      });
+
+      await doc.save();
+    }
+
+    return {
+      success: true,
+      message: `Indent ${cleanKey} and all ${docs.length} pending items have been rejected.`,
+      count: docs.length,
+      indentNumber: cleanKey,
+    };
   }
 
   /**
@@ -1691,7 +2170,7 @@ export class IndentRaiseService implements OnModuleInit, OnModuleDestroy {
     if (!doc) {
       throw new NotFoundException('Indent record not found');
     }
-    if (doc.status !== 'PENDING') {
+    if (doc.status !== 'PENDING' && doc.status !== 'DEPT_APPROVED') {
       throw new BadRequestException(
         `Cannot reject indent. Current status is already ${doc.status}`,
       );

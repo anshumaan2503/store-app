@@ -43,6 +43,8 @@ export class StoreCartController {
       monthEndRevertEnabled?: boolean;
       indentApprovalRequired?: boolean;
       grnWorkflowEnabled?: boolean;
+      indentAutoCloseDays?: number;
+      indentAutoCloseEnabled?: boolean;
       updatedBy?: string;
     },
   ) {

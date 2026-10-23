@@ -30,7 +30,7 @@ export class StockRefillRequestController {
   constructor(private readonly service: IndentRaiseService) {}
 
   @Post()
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentraise', 'storeindentdraft')
   async create(@Body() dto: CreateStockRefillRequestDto, @Req() req: any) {
     const data = await this.service.create(dto, req.user);
     return {
@@ -48,6 +48,9 @@ export class StockRefillRequestController {
     'storissueapprove',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindenthistory',
+    'storeindentconsolidation',
   )
   async findAll(
     @Query('status') status?: string,
@@ -87,6 +90,8 @@ export class StockRefillRequestController {
     'storissueview',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindentraise',
   )
   async getIndentReadyItems() {
     const data = await this.service.getIndentReadyItems();
@@ -104,6 +109,8 @@ export class StockRefillRequestController {
     'storissueapprove',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindenthistory',
   )
   async findOne(@Param('id') id: string) {
     const data = await this.service.findOne(id);
@@ -119,6 +126,7 @@ export class StockRefillRequestController {
     'storreceiveapprove',
     'storissueapprove',
     'storeadmin',
+    'storeindentapprove',
   )
   async approve(
     @Param('id') id: string,
@@ -141,6 +149,7 @@ export class StockRefillRequestController {
     'storreceiveapprove',
     'storissueapprove',
     'storeadmin',
+    'storeindentapprove',
   )
   async creditStock(
     @Param('id') id: string,
@@ -163,6 +172,8 @@ export class StockRefillRequestController {
     'storissueapprove',
     'storissuereject',
     'storeadmin',
+    'storeindentreject',
+    'storeindentapprove',
   )
   async reject(
     @Param('id') id: string,
@@ -187,6 +198,8 @@ export class StockRefillRequestController {
     'storissueedit',
     'storissueadd',
     'storeadmin',
+    'storeindentdraft',
+    'storeindentapprove',
   )
   async updateQuantity(
     @Param('id') id: string,
@@ -210,6 +223,7 @@ export class StockRefillRequestController {
     'storrefilladd',
     'storissueadd',
     'storissueedit',
+    'storeindentdraft',
   )
   async delete(@Param('id') id: string, @Req() req: any) {
     const data = await this.service.delete(id, req.user);

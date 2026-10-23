@@ -113,24 +113,36 @@ final activeIndentForItemProvider = FutureProvider.autoDispose
 
 final storeConsolidationSearchProvider = StateProvider<String>((ref) => '');
 
-final pendingStoreConsolidationProvider =
-    FutureProvider.autoDispose<List<ConsolidatedStoreItemModel>>((ref) async {
+final storeConsolidationPayloadProvider =
+    FutureProvider.autoDispose<StoreConsolidationPayloadModel>((ref) async {
   final repository = ref.watch(stockRefillRequestRepositoryProvider);
   final search = ref.watch(storeConsolidationSearchProvider);
-  final res = await repository.getPendingStoreConsolidation(search: search);
+  final res = await repository.getStoreConsolidationPayload(search: search);
   return res.fold(
     (l) => throw l.message,
     (r) => r,
   );
 });
 
+final pendingStoreConsolidationProvider =
+    FutureProvider.autoDispose<List<ConsolidatedStoreItemModel>>((ref) async {
+  final payload = await ref.watch(storeConsolidationPayloadProvider.future);
+  return payload.itemWise;
+});
+
+final pendingIndentWiseConsolidationProvider =
+    FutureProvider.autoDispose<List<ConsolidatedIndentGroupModel>>((ref) async {
+  final payload = await ref.watch(storeConsolidationPayloadProvider.future);
+  return payload.indentWise;
+});
+
 final pendingStoreConsolidationCountProvider =
     FutureProvider.autoDispose<int>((ref) async {
   final repository = ref.watch(stockRefillRequestRepositoryProvider);
-  final res = await repository.getPendingStoreConsolidation();
+  final res = await repository.getStoreConsolidationPayload();
   return res.fold(
     (l) => 0,
-    (r) => r.length,
+    (r) => r.totalPendingItems,
   );
 });
 
@@ -385,6 +397,128 @@ class StockRefillRequestController extends StateNotifier<AsyncValue<void>> {
         _ref.invalidate(refillRequestsListProvider);
         _ref.invalidate(pendingRefillRequestsCountProvider);
         return success;
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> approveIndentItem({
+    required String id,
+    num? approvedQty,
+    String? remarks,
+    bool overrideMaxCapacity = false,
+  }) async {
+    state = const AsyncValue.loading();
+    final repo = _ref.read(stockRefillRequestRepositoryProvider);
+    final res = await repo.approveIndentItem(
+      id: id,
+      approvedQty: approvedQty,
+      remarks: remarks,
+      overrideMaxCapacity: overrideMaxCapacity,
+    );
+
+    return res.fold(
+      (failure) {
+        state = AsyncValue.error(failure.message, failure.stackTrace);
+        return null;
+      },
+      (data) {
+        state = const AsyncValue.data(null);
+        _ref.invalidate(storeConsolidationPayloadProvider);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingIndentWiseConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
+        _ref.invalidate(refillRequestsListProvider);
+        _ref.invalidate(pendingRefillRequestsCountProvider);
+        return data;
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> rejectWholeIndent({
+    required String indentNumber,
+    String? remarks,
+  }) async {
+    state = const AsyncValue.loading();
+    final repo = _ref.read(stockRefillRequestRepositoryProvider);
+    final res = await repo.rejectWholeIndent(
+      indentNumber: indentNumber,
+      remarks: remarks,
+    );
+
+    return res.fold(
+      (failure) {
+        state = AsyncValue.error(failure.message, failure.stackTrace);
+        return null;
+      },
+      (data) {
+        state = const AsyncValue.data(null);
+        _ref.invalidate(storeConsolidationPayloadProvider);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingIndentWiseConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
+        _ref.invalidate(refillRequestsListProvider);
+        _ref.invalidate(pendingRefillRequestsCountProvider);
+        return data;
+      },
+    );
+  }
+
+  Future<StockRefillRequestModel?> rejectIndentItem({
+    required String id,
+    String? remarks,
+  }) async {
+    state = const AsyncValue.loading();
+    final repo = _ref.read(stockRefillRequestRepositoryProvider);
+    final res = await repo.rejectRefillRequest(
+      id,
+      reviewRemarks: remarks,
+    );
+
+    return res.fold(
+      (failure) {
+        state = AsyncValue.error(failure.message, failure.stackTrace);
+        return null;
+      },
+      (data) {
+        state = const AsyncValue.data(null);
+        _ref.invalidate(storeConsolidationPayloadProvider);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingIndentWiseConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
+        _ref.invalidate(refillRequestsListProvider);
+        _ref.invalidate(pendingRefillRequestsCountProvider);
+        return data;
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> approveWholeIndent({
+    required String indentNumber,
+    String? remarks,
+    bool overrideMaxCapacity = false,
+  }) async {
+    state = const AsyncValue.loading();
+    final repo = _ref.read(stockRefillRequestRepositoryProvider);
+    final res = await repo.approveWholeIndent(
+      indentNumber: indentNumber,
+      remarks: remarks,
+      overrideMaxCapacity: overrideMaxCapacity,
+    );
+
+    return res.fold(
+      (failure) {
+        state = AsyncValue.error(failure.message, failure.stackTrace);
+        return null;
+      },
+      (data) {
+        state = const AsyncValue.data(null);
+        _ref.invalidate(storeConsolidationPayloadProvider);
+        _ref.invalidate(pendingStoreConsolidationProvider);
+        _ref.invalidate(pendingIndentWiseConsolidationProvider);
+        _ref.invalidate(pendingStoreConsolidationCountProvider);
+        _ref.invalidate(refillRequestsListProvider);
+        _ref.invalidate(pendingRefillRequestsCountProvider);
+        return data;
       },
     );
   }

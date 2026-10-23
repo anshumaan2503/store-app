@@ -32,6 +32,13 @@ export class StoreCartConfig extends Document {
   @Prop({ default: false })
   grnWorkflowEnabled: boolean;
 
+  // Auto-close stale indents after 1 month (30 days default)
+  @Prop({ default: 30 })
+  indentAutoCloseDays: number;
+
+  @Prop({ default: true })
+  indentAutoCloseEnabled: boolean;
+
   @Prop({ default: null })
   updatedBy?: string;
 }

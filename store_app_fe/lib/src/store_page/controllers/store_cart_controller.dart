@@ -213,6 +213,8 @@ class StoreCartConfig {
   final bool monthEndRevertEnabled;
   final bool indentApprovalRequired;
   final bool grnWorkflowEnabled;
+  final int indentAutoCloseDays;
+  final bool indentAutoCloseEnabled;
 
   const StoreCartConfig({
     this.cartTimeoutMinutes = 5,
@@ -222,10 +224,13 @@ class StoreCartConfig {
     this.monthEndRevertEnabled = true,
     this.indentApprovalRequired = false,
     this.grnWorkflowEnabled = false,
+    this.indentAutoCloseDays = 30,
+    this.indentAutoCloseEnabled = true,
   });
 
   Duration get timeoutDuration => Duration(minutes: cartTimeoutMinutes);
   Duration get requestTimeoutDuration => Duration(days: requestTimeoutDays);
+  Duration get indentAutoCloseDuration => Duration(days: indentAutoCloseDays);
 
   StoreCartConfig copyWith({
     int? cartTimeoutMinutes,
@@ -235,6 +240,8 @@ class StoreCartConfig {
     bool? monthEndRevertEnabled,
     bool? indentApprovalRequired,
     bool? grnWorkflowEnabled,
+    int? indentAutoCloseDays,
+    bool? indentAutoCloseEnabled,
   }) {
     return StoreCartConfig(
       cartTimeoutMinutes: cartTimeoutMinutes ?? this.cartTimeoutMinutes,
@@ -248,6 +255,10 @@ class StoreCartConfig {
           indentApprovalRequired ?? this.indentApprovalRequired,
       grnWorkflowEnabled:
           grnWorkflowEnabled ?? this.grnWorkflowEnabled,
+      indentAutoCloseDays:
+          indentAutoCloseDays ?? this.indentAutoCloseDays,
+      indentAutoCloseEnabled:
+          indentAutoCloseEnabled ?? this.indentAutoCloseEnabled,
     );
   }
 
@@ -273,6 +284,12 @@ class StoreCartConfig {
           map['indentApprovalRequired'].toString() == 'true',
       grnWorkflowEnabled: map['grnWorkflowEnabled'] == true ||
           map['grnWorkflowEnabled'].toString() == 'true',
+      indentAutoCloseDays:
+          int.tryParse(map['indentAutoCloseDays']?.toString() ?? '30') ?? 30,
+      indentAutoCloseEnabled: map['indentAutoCloseEnabled'] == null
+          ? true
+          : (map['indentAutoCloseEnabled'] == true ||
+              map['indentAutoCloseEnabled'].toString() == 'true'),
     );
   }
 
@@ -285,6 +302,8 @@ class StoreCartConfig {
       'monthEndRevertEnabled': monthEndRevertEnabled,
       'indentApprovalRequired': indentApprovalRequired,
       'grnWorkflowEnabled': grnWorkflowEnabled,
+      'indentAutoCloseDays': indentAutoCloseDays,
+      'indentAutoCloseEnabled': indentAutoCloseEnabled,
     };
   }
 }
@@ -383,6 +402,8 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
     bool? monthEndRevertEnabled,
     bool? indentApprovalRequired,
     bool? grnWorkflowEnabled,
+    int? indentAutoCloseDays,
+    bool? indentAutoCloseEnabled,
     String? updatedBy,
   }) async {
     try {
@@ -395,6 +416,8 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
         if (monthEndRevertEnabled != null) 'monthEndRevertEnabled': monthEndRevertEnabled,
         if (indentApprovalRequired != null) 'indentApprovalRequired': indentApprovalRequired,
         if (grnWorkflowEnabled != null) 'grnWorkflowEnabled': grnWorkflowEnabled,
+        if (indentAutoCloseDays != null) 'indentAutoCloseDays': indentAutoCloseDays,
+        if (indentAutoCloseEnabled != null) 'indentAutoCloseEnabled': indentAutoCloseEnabled,
         if (updatedBy != null && updatedBy.isNotEmpty) 'updatedBy': updatedBy,
       });
 
@@ -416,6 +439,10 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
               indentApprovalRequired ?? state.indentApprovalRequired,
           grnWorkflowEnabled:
               grnWorkflowEnabled ?? state.grnWorkflowEnabled,
+          indentAutoCloseDays:
+              indentAutoCloseDays ?? state.indentAutoCloseDays,
+          indentAutoCloseEnabled:
+              indentAutoCloseEnabled ?? state.indentAutoCloseEnabled,
         );
         state = cfg;
         _syncActiveTimeout(cfg);
@@ -871,7 +898,7 @@ class StoreCartNotifier extends StateNotifier<StoreCartState> {
       String uid = _currentUid;
       if (uid.isEmpty) {
         final sp = _ref.read(spRepositoryProvider);
-        uid = await sp.getStringValue('uid') ?? '';
+        uid = await sp.getStringValue('uid');
       }
       if (uid.isNotEmpty) {
         final url = Uri.parse('${Constants.socketUrl}/api/store/cart/clear');

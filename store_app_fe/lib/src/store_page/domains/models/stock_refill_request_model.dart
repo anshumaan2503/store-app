@@ -392,3 +392,212 @@ class ConsolidatedStoreItemModel {
     );
   }
 }
+
+@immutable
+class ConsolidatedIndentItemModel {
+  final String id;
+  final String indentNumber;
+  final String groupIndentNumber;
+  final String itemId;
+  final String itemCode;
+  final String itemName;
+  final String unit;
+  final num currentStock;
+  final num maxCapacity;
+  final num maxAllowedBuffer;
+  final num requestedQty;
+  final num indentQty;
+  final num? originalIndentQty;
+  final bool exceedsMax;
+  final bool exceedsBuffer;
+  final bool isApproved;
+  final String status;
+  final bool isAutoRefill;
+  final String reason;
+  final String requestedBy;
+  final String department;
+  final DateTime? createdAt;
+  final String storeApprovedBy;
+  final DateTime? storeApprovedAt;
+  final StockRefillRequestModel underlyingIndent;
+
+  const ConsolidatedIndentItemModel({
+    required this.id,
+    required this.indentNumber,
+    required this.groupIndentNumber,
+    required this.itemId,
+    required this.itemCode,
+    required this.itemName,
+    required this.unit,
+    required this.currentStock,
+    required this.maxCapacity,
+    required this.maxAllowedBuffer,
+    required this.requestedQty,
+    required this.indentQty,
+    this.originalIndentQty,
+    required this.exceedsMax,
+    required this.exceedsBuffer,
+    required this.isApproved,
+    required this.status,
+    required this.isAutoRefill,
+    required this.reason,
+    required this.requestedBy,
+    required this.department,
+    this.createdAt,
+    required this.storeApprovedBy,
+    this.storeApprovedAt,
+    required this.underlyingIndent,
+  });
+
+  factory ConsolidatedIndentItemModel.fromJson(Map<String, dynamic> json) {
+    final underlying = StockRefillRequestModel.fromJson(json);
+    return ConsolidatedIndentItemModel(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      indentNumber: (json['indentNumber'] ?? '').toString(),
+      groupIndentNumber: (json['groupIndentNumber'] ?? '').toString(),
+      itemId: (json['itemId'] ?? '').toString(),
+      itemCode: (json['itemCode'] ?? '').toString(),
+      itemName: (json['itemName'] ?? json['itemDescription'] ?? '').toString(),
+      unit: (json['unit'] ?? json['unitOfMeasure'] ?? 'units').toString(),
+      currentStock: (json['currentStock'] as num?) ?? 0,
+      maxCapacity: (json['maxCapacity'] as num?) ?? 0,
+      maxAllowedBuffer: (json['maxAllowedBuffer'] as num?) ?? 0,
+      requestedQty: (json['requestedQty'] as num?) ?? (json['indentQty'] as num?) ?? 0,
+      indentQty: (json['indentQty'] as num?) ?? (json['requestedQty'] as num?) ?? 0,
+      originalIndentQty: json['originalIndentQty'] as num?,
+      exceedsMax: json['exceedsMax'] == true,
+      exceedsBuffer: json['exceedsBuffer'] == true,
+      isApproved: json['isApproved'] == true || (json['status'] ?? '').toString().toUpperCase() == 'APPROVED',
+      status: (json['status'] ?? 'PENDING').toString().toUpperCase(),
+      isAutoRefill: json['isAutoRefill'] == true,
+      reason: (json['reason'] ?? '').toString(),
+      requestedBy: (json['requestedBy'] ?? '').toString(),
+      department: (json['department'] ?? '').toString(),
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : (json['createdOn'] != null ? DateTime.tryParse(json['createdOn'].toString()) : null),
+      storeApprovedBy: (json['storeApprovedBy'] ?? '').toString(),
+      storeApprovedAt: json['storeApprovedAt'] != null ? DateTime.tryParse(json['storeApprovedAt'].toString()) : null,
+      underlyingIndent: underlying,
+    );
+  }
+}
+
+@immutable
+class ConsolidatedIndentGroupModel {
+  final String groupIndentNumber;
+  final String indentNumber;
+  final String department;
+  final String requestedBy;
+  final String requesterRole;
+  final bool isAutoRefill;
+  final DateTime? createdAt;
+  final String status;
+  final int totalItems;
+  final int approvedItemsCount;
+  final int pendingItemsCount;
+  final bool isFullyApproved;
+  final num totalRequestedQty;
+  final bool hasCapacityWarning;
+  final List<ConsolidatedIndentItemModel> items;
+
+  const ConsolidatedIndentGroupModel({
+    required this.groupIndentNumber,
+    required this.indentNumber,
+    required this.department,
+    required this.requestedBy,
+    required this.requesterRole,
+    required this.isAutoRefill,
+    this.createdAt,
+    required this.status,
+    required this.totalItems,
+    required this.approvedItemsCount,
+    required this.pendingItemsCount,
+    required this.isFullyApproved,
+    required this.totalRequestedQty,
+    required this.hasCapacityWarning,
+    required this.items,
+  });
+
+  factory ConsolidatedIndentGroupModel.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+    final itemsList = (rawItems is List)
+        ? rawItems.map((e) => ConsolidatedIndentItemModel.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+        : <ConsolidatedIndentItemModel>[];
+
+    final approved = itemsList.where((i) => i.isApproved).length;
+    final total = (json['totalItems'] as num?)?.toInt() ?? itemsList.length;
+
+    return ConsolidatedIndentGroupModel(
+      groupIndentNumber: (json['groupIndentNumber'] ?? '').toString(),
+      indentNumber: (json['indentNumber'] ?? json['groupIndentNumber'] ?? '').toString(),
+      department: (json['department'] ?? 'General').toString(),
+      requestedBy: (json['requestedBy'] ?? 'Staff').toString(),
+      requesterRole: (json['requesterRole'] ?? 'Staff').toString(),
+      isAutoRefill: json['isAutoRefill'] == true,
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
+      status: (json['status'] ?? 'PENDING').toString(),
+      totalItems: total,
+      approvedItemsCount: (json['approvedItemsCount'] as num?)?.toInt() ?? approved,
+      pendingItemsCount: (json['pendingItemsCount'] as num?)?.toInt() ?? (total - approved),
+      isFullyApproved: json['isFullyApproved'] == true || (total > 0 && approved == total),
+      totalRequestedQty: (json['totalRequestedQty'] as num?) ?? 0,
+      hasCapacityWarning: json['hasCapacityWarning'] == true,
+      items: itemsList,
+    );
+  }
+}
+
+@immutable
+class StoreConsolidationPayloadModel {
+  final List<ConsolidatedIndentGroupModel> indentWise;
+  final List<ConsolidatedStoreItemModel> itemWise;
+  final int totalIndents;
+  final int totalPendingItems;
+
+  const StoreConsolidationPayloadModel({
+    required this.indentWise,
+    required this.itemWise,
+    required this.totalIndents,
+    required this.totalPendingItems,
+  });
+
+  factory StoreConsolidationPayloadModel.fromJson(dynamic rawData) {
+    if (rawData is Map<String, dynamic>) {
+      final rawIndentWise = rawData['indentWise'];
+      final indentList = (rawIndentWise is List)
+          ? rawIndentWise.map((e) => ConsolidatedIndentGroupModel.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+          : <ConsolidatedIndentGroupModel>[];
+
+      final rawItemWise = rawData['itemWise'];
+      final itemList = (rawItemWise is List)
+          ? rawItemWise.map((e) => ConsolidatedStoreItemModel.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+          : <ConsolidatedStoreItemModel>[];
+
+      final summary = rawData['summary'] as Map<String, dynamic>?;
+      final totalIndents = (summary?['totalIndents'] as num?)?.toInt() ?? indentList.length;
+      final totalPendingItems = (summary?['totalPendingItems'] as num?)?.toInt() ?? 0;
+
+      return StoreConsolidationPayloadModel(
+        indentWise: indentList,
+        itemWise: itemList,
+        totalIndents: totalIndents,
+        totalPendingItems: totalPendingItems,
+      );
+    } else if (rawData is List) {
+      final itemList = rawData.map((e) => ConsolidatedStoreItemModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return StoreConsolidationPayloadModel(
+        indentWise: const [],
+        itemWise: itemList,
+        totalIndents: 0,
+        totalPendingItems: 0,
+      );
+    }
+    return const StoreConsolidationPayloadModel(
+      indentWise: [],
+      itemWise: [],
+      totalIndents: 0,
+      totalPendingItems: 0,
+    );
+  }
+}

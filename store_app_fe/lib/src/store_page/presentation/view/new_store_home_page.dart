@@ -24,6 +24,7 @@ import '../../controllers/store_cart_controller.dart';
 import 'cart/store_cart_page.dart';
 import 'cart/store_cart_timer_settings_sheet.dart';
 import 'indent/indent_drafts_page.dart';
+import 'indent/indents_hub_page.dart';
 import '../../controllers/indent_draft_controller.dart';
 
 /* ---------------- Palette (your theme) ---------------- */
@@ -44,7 +45,7 @@ const _bgBottom = _surfaceAlt;
 
 /* ---------------- Navigation Model ---------------- */
 
-enum StoreSection { dashboard, items, findItem, places, admin, receive, issue, returns }
+enum StoreSection { dashboard, items, findItem, places, admin, receive, issue, returns, indents }
 
 IconData _iconForSection(StoreSection s) {
   switch (s) {
@@ -64,6 +65,8 @@ IconData _iconForSection(StoreSection s) {
       return Icons.call_split_rounded;
     case StoreSection.returns:
       return Icons.reset_tv_rounded;
+    case StoreSection.indents:
+      return Icons.post_add_rounded;
   }
 }
 
@@ -85,6 +88,8 @@ String _titleForSection(StoreSection s) {
       return 'Issue';
     case StoreSection.returns:
       return 'Return';
+    case StoreSection.indents:
+      return 'Indents';
   }
 }
 
@@ -123,13 +128,59 @@ extension AuthModelStorePermissions on AuthModel {
       appWorks.contains('storeadmin') ||
       appWorks.contains('storeitemfind');
 
-  bool get canRaiseIndent =>
+  bool get canIndentsNav =>
       isSuperAdmin ||
-      canIssue ||
-      canReceive ||
       appWorks.contains('storeadmin') ||
-      appWorks.contains('storrefilladd') ||
-      appWorks.contains('storeitemview');
+      appWorks.contains('storeindentview') ||
+      appWorks.contains('storeindentdraft') ||
+      appWorks.contains('storeindentconsolidation') ||
+      appWorks.contains('storeindentapprove') ||
+      appWorks.contains('storeindentraise') ||
+      appWorks.contains('storeindenthistory');
+
+  bool get canIndentDraft =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindentdraft') ||
+      appWorks.contains('storeindentview');
+
+  bool get canIndentConsolidation =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindentconsolidation') ||
+      appWorks.contains('storeindentapprove') ||
+      appWorks.contains('storrefillapprove') ||
+      appWorks.contains('storreceiveapprove');
+
+  bool get canIndentApprove =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindentapprove') ||
+      appWorks.contains('storrefillapprove') ||
+      appWorks.contains('storreceiveapprove');
+
+  bool get canIndentReject =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindentreject') ||
+      appWorks.contains('storeindentapprove') ||
+      appWorks.contains('storreceivereject') ||
+      appWorks.contains('storrefillapprove');
+
+  bool get canIndentRaise =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindentraise') ||
+      appWorks.contains('storeindentdraft') ||
+      appWorks.contains('storrefilladd');
+
+  bool get canIndentHistory =>
+      isSuperAdmin ||
+      appWorks.contains('storeadmin') ||
+      appWorks.contains('storeindenthistory') ||
+      appWorks.contains('storeindentview');
+
+  bool get canRaiseIndent => canIndentRaise;
 }
 
 /* ---------------- Page ---------------- */
@@ -311,6 +362,10 @@ class _StoreDashboardShellPageState
       case 'return':
         target = StoreSection.returns;
         break;
+      case 'indents':
+      case 'indent':
+        target = StoreSection.indents;
+        break;
     }
     if (target != null && target != _section) {
       setState(() {
@@ -462,7 +517,7 @@ class _StoreDashboardShellPageState
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (user.canRaiseIndent) ...[
+              if (user.canIndentDraft) ...[
                 Consumer(
                   builder: (context, ref, _) {
                     final draftState = ref.watch(indentDraftControllerProvider);
@@ -586,12 +641,28 @@ class _StoreDashboardShellPageState
                   (user.canReceive ||
                       user.canIssue ||
                       user.canReturn ||
+                      user.canIndentsNav ||
                       user.isSuperAdmin))
                 PopupMenuButton<StoreSection>(
                   tooltip: 'More Sections',
                   onSelected: (s) => setState(() => _section = s),
                   itemBuilder: (_) {
                     final items = <PopupMenuEntry<StoreSection>>[];
+
+                    if (user.canIndentsNav) {
+                      items.add(
+                        const PopupMenuItem<StoreSection>(
+                          value: StoreSection.indents,
+                          child: Row(
+                            children: [
+                              Icon(Icons.post_add_rounded, size: 18),
+                              SizedBox(width: 8),
+                              Text('Indents'),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
 
                     if (user.canReceive) {
                       items.add(
@@ -780,6 +851,11 @@ class _StoreDashboardShellPageState
             scanIssueButtonKey: GuidedTourController.scanIssueButtonKey,
           ),
         );
+      case StoreSection.indents:
+        return const KeyedSubtree(
+          key: ValueKey(StoreSection.indents),
+          child: IndentsHubPage(),
+        );
     }
   }
 }
@@ -942,7 +1018,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                       onTap: () => onSelect(StoreSection.places),
                     ),
 
-                  if (user.canReceive || user.canIssue || user.canReturn) ...[
+                  if (user.canReceive || user.canIssue || user.canReturn || user.canIndentsNav) ...[
                     const SizedBox(height: 8),
                     Container(
                       height: 1,
@@ -951,6 +1027,14 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                     ),
                     const _NavCategoryLabel(label: 'OPERATIONS'),
                     const SizedBox(height: 3),
+                    if (user.canIndentsNav)
+                      _SidebarItem(
+                        activeIcon: Icons.post_add_rounded,
+                        inactiveIcon: Icons.post_add_outlined,
+                        label: 'Indents',
+                        selected: _isSelected(StoreSection.indents),
+                        onTap: () => onSelect(StoreSection.indents),
+                      ),
                     if (user.canReceive)
                       _SidebarItem(
                         activeIcon: Icons.inbox_rounded,

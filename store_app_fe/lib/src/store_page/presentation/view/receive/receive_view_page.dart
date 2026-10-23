@@ -15,7 +15,6 @@ import 'stock_refill_requests_list_view.dart';
 import '../../../controllers/guided_tour_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../items/qr_code/qr_code_print_item_page.dart';
-import '../indent/store_indent_consolidation_page.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -34,7 +33,7 @@ class ReceivePagedListPage extends ConsumerStatefulWidget {
 }
 
 class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
-  int _selectedTab = 0; // 0: Stock Receipts, 1: Store Consolidation, 2: Indents & GRN
+  int _selectedTab = 0; // 0: Stock Receipts, 1: Indents & GRN
   String _q = '';
   int _limit = 12;
   final _scrollController = ScrollController();
@@ -1053,8 +1052,6 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
 
                 final pendingRefillCount =
                     ref.watch(pendingRefillRequestsCountProvider).value ?? 0;
-                final pendingConsolidationCount =
-                    ref.watch(pendingStoreConsolidationCountProvider).value ?? 0;
 
                 return Scaffold(
                   floatingActionButton: () {
@@ -1175,15 +1172,15 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                         ),
                                       ),
                                       const SizedBox(width: 4),
-                                      // Tab 1: Store Consolidation (Manager Flow)
+                                      // Tab 1: Indent Requests & GRN
                                       Expanded(
                                         child: InkWell(
                                           borderRadius:
                                               BorderRadius.circular(10),
                                           onTap: () {
                                             setState(() => _selectedTab = 1);
-                                            ref.invalidate(pendingStoreConsolidationProvider);
-                                            ref.invalidate(pendingStoreConsolidationCountProvider);
+                                            ref.invalidate(refillRequestsListProvider);
+                                            ref.invalidate(pendingRefillRequestsCountProvider);
                                           },
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(
@@ -1210,93 +1207,9 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                                   MainAxisAlignment.center,
                                               children: [
                                                 Icon(
-                                                  Icons.hub_outlined,
-                                                  size: 16,
-                                                  color: _selectedTab == 1
-                                                      ? const Color(0xFF1565C0)
-                                                      : _ink600,
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Text(
-                                                  'Store Consolidation',
-                                                  style: TextStyle(
-                                                    color: _selectedTab == 1
-                                                        ? const Color(0xFF1565C0)
-                                                        : _ink600,
-                                                    fontWeight:
-                                                        FontWeight.w800,
-                                                    fontSize: 12.5,
-                                                  ),
-                                                ),
-                                                if (pendingConsolidationCount > 0) ...[
-                                                  const SizedBox(width: 5),
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets
-                                                            .symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFF1E88E5),
-                                                      borderRadius:
-                                                          BorderRadius.circular(10),
-                                                    ),
-                                                    child: Text(
-                                                      '$pendingConsolidationCount',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      // Tab 2: Indent Requests & GRN
-                                      Expanded(
-                                        child: InkWell(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          onTap: () {
-                                            setState(() => _selectedTab = 2);
-                                            ref.invalidate(refillRequestsListProvider);
-                                            ref.invalidate(pendingRefillRequestsCountProvider);
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: _selectedTab == 2
-                                                  ? _surface
-                                                  : Colors.transparent,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              boxShadow: _selectedTab == 2
-                                                  ? const [
-                                                      BoxShadow(
-                                                        color:
-                                                            Color(0x0A000000),
-                                                        blurRadius: 4,
-                                                        offset: Offset(0, 2),
-                                                      ),
-                                                    ]
-                                                  : null,
-                                            ),
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
                                                   Icons.assignment_outlined,
                                                   size: 16,
-                                                  color: _selectedTab == 2
+                                                  color: _selectedTab == 1
                                                       ? _ink900
                                                       : _ink600,
                                                 ),
@@ -1304,7 +1217,7 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                                 Text(
                                                   'Indents & GRN',
                                                   style: TextStyle(
-                                                    color: _selectedTab == 2
+                                                    color: _selectedTab == 1
                                                         ? _ink900
                                                         : _ink600,
                                                     fontWeight:
@@ -1348,12 +1261,6 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                   ),
                                 ),
                                 if (_selectedTab == 1)
-                                  const Expanded(
-                                    child: StoreIndentConsolidationPage(
-                                      isEmbedded: true,
-                                    ),
-                                  )
-                                else if (_selectedTab == 2)
                                   Expanded(
                                     child: StockRefillRequestsListView(
                                       initialStatusFilter: ref.watch(storeCartConfigProvider).indentApprovalRequired

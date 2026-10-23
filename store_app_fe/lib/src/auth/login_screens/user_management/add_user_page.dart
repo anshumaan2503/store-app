@@ -97,6 +97,14 @@ enum Access {
   storissuereturn,
   historyissueItem,
 
+  storeindentview,
+  storeindentdraft,
+  storeindentraise,
+  storeindentconsolidation,
+  storeindentapprove,
+  storeindentreject,
+  storeindenthistory,
+
   storeexport,
   storeimportData,
   storeadmin,
@@ -145,6 +153,14 @@ extension AccessX on Access {
     Access.storissuereturn => 'Issue • Return',
     Access.historyissueItem => 'Issue • History',
 
+    Access.storeindentview => 'Indent • View',
+    Access.storeindentdraft => 'Indent • Cart / Drafts',
+    Access.storeindentraise => 'Indent • Raise',
+    Access.storeindentconsolidation => 'Indent • Consolidation',
+    Access.storeindentapprove => 'Indent • Approve',
+    Access.storeindentreject => 'Indent • Reject',
+    Access.storeindenthistory => 'Indent • History',
+
     Access.storeexport => 'Store • Export',
     Access.storeimportData => 'Store • Import',
     Access.storeadmin => 'Store • Admin',
@@ -189,6 +205,14 @@ extension AccessX on Access {
     Access.storissuereturn => Icons.assignment_return_rounded,
     Access.historyissueItem => Icons.history_edu_rounded,
 
+    Access.storeindentview => Icons.hub_outlined,
+    Access.storeindentdraft => Icons.shopping_bag_outlined,
+    Access.storeindentraise => Icons.post_add_rounded,
+    Access.storeindentconsolidation => Icons.tune_rounded,
+    Access.storeindentapprove => Icons.check_circle_outline_rounded,
+    Access.storeindentreject => Icons.cancel_outlined,
+    Access.storeindenthistory => Icons.history_rounded,
+
     Access.storeexport => Icons.file_upload_rounded,
     Access.storeimportData => Icons.file_download_rounded,
     Access.storeadmin => Icons.security_rounded,
@@ -232,6 +256,14 @@ extension AccessX on Access {
     Access.storissuefromstock => const Color(0xFF64748B),
     Access.storissuereturn => const Color(0xFF60A5FA),
     Access.historyissueItem => const Color(0xFFFAC515),
+
+    Access.storeindentview => const Color(0xFFF59E0B),
+    Access.storeindentdraft => const Color(0xFFEA580C),
+    Access.storeindentraise => const Color(0xFF2563EB),
+    Access.storeindentconsolidation => const Color(0xFF8B5CF6),
+    Access.storeindentapprove => const Color(0xFF16A34A),
+    Access.storeindentreject => const Color(0xFFDC2626),
+    Access.storeindenthistory => const Color(0xFF64748B),
 
     Access.storeexport => const Color(0xFF6366F1),
     Access.storeimportData => const Color(0xFF8B5CF6),
@@ -316,6 +348,20 @@ List<AccessGroup> buildGroups(AppOption app) {
           Access.storissuefromstock,
           Access.storissuereturn,
           Access.historyissueItem,
+        ],
+      ),
+      AccessGroup(
+        title: 'Indent',
+        icon: Icons.receipt_long_rounded,
+        tint: Color(0xFFF59E0B),
+        options: [
+          Access.storeindentview,
+          Access.storeindentdraft,
+          Access.storeindentraise,
+          Access.storeindentconsolidation,
+          Access.storeindentapprove,
+          Access.storeindentreject,
+          Access.storeindenthistory,
         ],
       ),
       AccessGroup(

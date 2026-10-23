@@ -9,6 +9,7 @@ import 'find_item_page.dart';
 import 'item_scan_page.dart';
 import 'qr_code/qr_code_print_item_page.dart';
 import 'stock_refill_request_create_page.dart';
+import '../new_store_home_page.dart';
 import 'item_activity_breakdown_sheet.dart';
 import 'item_rate_history_sheet.dart';
 
@@ -317,58 +318,66 @@ class ItemListCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Tooltip(
-                      message: isItemMaxReached
-                          ? 'Maximum quantity reached (${item.maxCapacity}) — cannot raise indent'
-                          : 'Raise Indent Request',
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: isItemMaxReached
-                            ? () {
-                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    backgroundColor: const Color(0xFFC62828),
-                                    content: Text(
-                                      'Item "${item.itemName}" has reached its maximum quantity of ${item.maxCapacity}. Manual indent request cannot be generated.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            : () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        StockRefillRequestCreatePage(item: item),
-                                  ),
-                                );
-                              },
-                        child: Container(
-                          padding: const EdgeInsets.all(3.5),
-                          decoration: BoxDecoration(
-                            color: isItemMaxReached
-                                ? const Color(0xFFF5F5F5)
-                                : const Color(0xFFEFF6FF),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final user = ref.watch(userFindOneDataStreamProvider).value;
+                        final canRaise = user?.canIndentRaise ?? false;
+                        if (!canRaise) return const SizedBox.shrink();
+
+                        return Tooltip(
+                          message: isItemMaxReached
+                              ? 'Maximum quantity reached (${item.maxCapacity}) — cannot raise indent'
+                              : 'Raise Indent Request',
+                          child: InkWell(
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: isItemMaxReached
-                                  ? const Color(0xFFE0E0E0)
-                                  : const Color(0xFFBFDBFE),
-                              width: 0.8,
+                            onTap: isItemMaxReached
+                                ? () {
+                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: const Color(0xFFC62828),
+                                        content: Text(
+                                          'Item "${item.itemName}" has reached its maximum quantity of ${item.maxCapacity}. Manual indent request cannot be generated.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            StockRefillRequestCreatePage(item: item),
+                                      ),
+                                    );
+                                  },
+                            child: Container(
+                              padding: const EdgeInsets.all(3.5),
+                              decoration: BoxDecoration(
+                                color: isItemMaxReached
+                                    ? const Color(0xFFF5F5F5)
+                                    : const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isItemMaxReached
+                                      ? const Color(0xFFE0E0E0)
+                                      : const Color(0xFFBFDBFE),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Icon(
+                                isItemMaxReached
+                                    ? Icons.block_rounded
+                                    : Icons.post_add_rounded,
+                                size: 15,
+                                color: isItemMaxReached
+                                    ? const Color(0xFF9E9E9E)
+                                    : const Color(0xFF1D4ED8),
+                              ),
                             ),
                           ),
-                          child: Icon(
-                            isItemMaxReached
-                                ? Icons.block_rounded
-                                : Icons.post_add_rounded,
-                            size: 15,
-                            color: isItemMaxReached
-                                ? const Color(0xFF9E9E9E)
-                                : const Color(0xFF1D4ED8),
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                     if (stockBell != null) ...[
                       const SizedBox(width: 4),

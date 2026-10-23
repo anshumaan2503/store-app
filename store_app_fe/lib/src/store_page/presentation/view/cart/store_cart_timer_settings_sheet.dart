@@ -49,6 +49,10 @@ class _StoreCartTimerSettingsSheetState
   // Option 5: GRN cart workflow
   late bool _grnWorkflowEnabled;
 
+  // Option 6: Indent 1-month auto-close
+  late bool _indentAutoCloseEnabled;
+  late int _indentAutoCloseDays;
+
   bool _saving = false;
 
   @override
@@ -62,6 +66,8 @@ class _StoreCartTimerSettingsSheetState
     _monthEndRevertEnabled = config.monthEndRevertEnabled;
     _indentApprovalRequired = config.indentApprovalRequired;
     _grnWorkflowEnabled = config.grnWorkflowEnabled;
+    _indentAutoCloseEnabled = config.indentAutoCloseEnabled;
+    _indentAutoCloseDays = config.indentAutoCloseDays;
   }
 
   Future<void> _handleSave() async {
@@ -76,6 +82,8 @@ class _StoreCartTimerSettingsSheetState
               monthEndRevertEnabled: _monthEndRevertEnabled,
               indentApprovalRequired: _indentApprovalRequired,
               grnWorkflowEnabled: _grnWorkflowEnabled,
+              indentAutoCloseDays: _indentAutoCloseDays,
+              indentAutoCloseEnabled: _indentAutoCloseEnabled,
               updatedBy: (auth?.name != null && auth!.name.isNotEmpty)
                   ? auth.name
                   : (auth?.uid ?? 'SuperAdmin'),
@@ -292,6 +300,31 @@ class _StoreCartTimerSettingsSheetState
                         setState(() => _grnWorkflowEnabled = val),
                     content: null,
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // 6. Auto-Close Stale Indents (1-Month Policy)
+                  _buildOptionCard(
+                    icon: Icons.hourglass_bottom_rounded,
+                    title: 'Auto-Close Stale Indents',
+                    subtitle: _indentAutoCloseEnabled
+                        ? 'Active: Unfulfilled pending indents auto-close after $_indentAutoCloseDays days (~${(_indentAutoCloseDays / 30).toStringAsFixed(1)} mo)'
+                        : 'Disabled: Indents remain open indefinitely until fulfilled or rejected',
+                    enabled: _indentAutoCloseEnabled,
+                    onToggle: (val) =>
+                        setState(() => _indentAutoCloseEnabled = val),
+                    content: _indentAutoCloseEnabled
+                        ? _buildStepper(
+                            currentVal: _indentAutoCloseDays,
+                            unit: 'days',
+                            min: 5,
+                            max: 180,
+                            presets: const [15, 30, 45, 60, 90],
+                            onChanged: (val) =>
+                                setState(() => _indentAutoCloseDays = val),
+                          )
+                        : null,
+                  ),
                 ],
               ),
             ),
@@ -303,14 +336,14 @@ class _StoreCartTimerSettingsSheetState
           ElevatedButton(
             onPressed: _saving ? null : _handleSave,
             style: ElevatedButton.styleFrom(
-              backgroundColor: _brandPrimary,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: const Color(0xFF93C5FD),
+              backgroundColor: _ink900,
+              foregroundColor: _surface,
+              disabledBackgroundColor: const Color(0xFFADB5BD),
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              elevation: 0,
+              elevation: 2,
             ),
             child: _saving
                 ? const SizedBox(
@@ -396,7 +429,8 @@ class _StoreCartTimerSettingsSheetState
               ),
               Switch(
                 value: enabled,
-                activeColor: _brandPrimary,
+                activeTrackColor: _ink900,
+                activeThumbColor: _surface,
                 onChanged: onToggle,
               ),
             ],

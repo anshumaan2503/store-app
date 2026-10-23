@@ -16,6 +16,8 @@ import {
   ReviewIndentRaiseDto,
   UpdateIndentQtyDto,
   ConsolidatedStoreApproveDto,
+  ApproveIndentItemDto,
+  ApproveWholeIndentDto,
 } from './dto/create-indent-raise.dto';
 import {
   AddIndentDraftBatchDto,
@@ -37,7 +39,7 @@ export class IndentRaiseController {
   // =========================================================================
 
   @Get('drafts')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft', 'storeindentview')
   async getDrafts(@Req() req: any) {
     const userId = (req.user?._id || req.user?.uid || '').toString();
     const data = await this.service.getDrafts(userId);
@@ -48,7 +50,7 @@ export class IndentRaiseController {
   }
 
   @Post('drafts')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft', 'storeindentraise')
   async addDrafts(
     @Body() body: AddIndentDraftItemDto | AddIndentDraftBatchDto,
     @Req() req: any,
@@ -66,7 +68,7 @@ export class IndentRaiseController {
   }
 
   @Put('drafts/:itemId')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft')
   async updateDraftItem(
     @Param('itemId') itemId: string,
     @Body() dto: UpdateIndentDraftItemDto,
@@ -82,7 +84,7 @@ export class IndentRaiseController {
   }
 
   @Delete('drafts/:itemId')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft')
   async removeDraftItem(@Param('itemId') itemId: string, @Req() req: any) {
     const userId = (req.user?._id || req.user?.uid || '').toString();
     const data = await this.service.removeDraftItem(userId, itemId);
@@ -94,7 +96,7 @@ export class IndentRaiseController {
   }
 
   @Delete('drafts')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft')
   async clearDrafts(@Req() req: any) {
     const userId = (req.user?._id || req.user?.uid || '').toString();
     const data = await this.service.clearDrafts(userId);
@@ -106,7 +108,7 @@ export class IndentRaiseController {
   }
 
   @Post('submit-combined')
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentdraft', 'storeindentraise')
   async submitCombined(
     @Body() dto: SubmitCombinedIndentDto,
     @Req() req: any,
@@ -125,7 +127,7 @@ export class IndentRaiseController {
   // =========================================================================
 
   @Post()
-  @Permissions('storeitemview', 'storrefilladd', 'storissueadd')
+  @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentraise', 'storeindentdraft')
   async create(@Body() dto: CreateIndentRaiseDto, @Req() req: any) {
     const data = await this.service.create(dto, req.user);
     return {
@@ -143,6 +145,9 @@ export class IndentRaiseController {
     'storissueapprove',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindenthistory',
+    'storeindentconsolidation',
   )
   async findAll(
     @Query('status') status?: string,
@@ -182,6 +187,8 @@ export class IndentRaiseController {
     'storissueview',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindentraise',
   )
   async getIndentReadyItems() {
     const data = await this.service.getIndentReadyItems();
@@ -197,11 +204,79 @@ export class IndentRaiseController {
     'storreceiveapprove',
     'storreceiveadd',
     'storeadmin',
+    'storeindentconsolidation',
+    'storeindentapprove',
+    'storeindentview',
   )
-  async getPendingStoreConsolidation(@Query('search') search?: string) {
-    const data = await this.service.getPendingStoreConsolidation(search);
+  async getPendingStoreConsolidation(
+    @Query('search') search?: string,
+    @Query('groupBy') groupBy?: string,
+  ) {
+    const data = await this.service.getPendingStoreConsolidation(search, groupBy);
     return {
       status: true,
+      data,
+    };
+  }
+
+  @Post('approve-item/:id')
+  @Permissions(
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storeadmin',
+    'storeindentapprove',
+  )
+  async approveIndentItem(
+    @Param('id') id: string,
+    @Body() dto: ApproveIndentItemDto,
+    @Req() req: any,
+  ) {
+    const data = await this.service.approveIndentItem(id, dto, req.user);
+    return {
+      status: true,
+      msg: data.message,
+      data,
+    };
+  }
+
+  @Post('approve-whole-indent/:indentNumber')
+  @Permissions(
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storeadmin',
+    'storeindentapprove',
+  )
+  async approveWholeIndent(
+    @Param('indentNumber') indentNumber: string,
+    @Body() dto: ApproveWholeIndentDto,
+    @Req() req: any,
+  ) {
+    const data = await this.service.approveWholeIndent(indentNumber, dto, req.user);
+    return {
+      status: true,
+      msg: data.message,
+      data,
+    };
+  }
+
+  @Post('reject-whole-indent/:indentNumber')
+  @Permissions(
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storreceivereject',
+    'storeadmin',
+    'storeindentreject',
+    'storeindentapprove',
+  )
+  async rejectWholeIndent(
+    @Param('indentNumber') indentNumber: string,
+    @Body() dto: { remarks?: string },
+    @Req() req: any,
+  ) {
+    const data = await this.service.rejectWholeIndent(indentNumber, dto, req.user);
+    return {
+      status: true,
+      msg: data.message,
       data,
     };
   }
@@ -211,6 +286,7 @@ export class IndentRaiseController {
     'storrefillapprove',
     'storreceiveapprove',
     'storeadmin',
+    'storeindentapprove',
   )
   async consolidatedStoreApprove(
     @Body() dto: ConsolidatedStoreApproveDto,
@@ -224,6 +300,17 @@ export class IndentRaiseController {
     };
   }
 
+  @Post('trigger-auto-close')
+  @Permissions('storeadmin')
+  async triggerAutoClose() {
+    const data = await this.service.autoCloseExpiredIndents();
+    return {
+      status: true,
+      msg: `Auto-close sweep completed: ${data.closedCount} indent(s) closed (older than ${data.days} days).`,
+      data,
+    };
+  }
+
   @Get(':id')
   @Permissions(
     'storrefillview',
@@ -232,6 +319,8 @@ export class IndentRaiseController {
     'storissueapprove',
     'storissueadd',
     'storeadmin',
+    'storeindentview',
+    'storeindenthistory',
   )
   async findOne(@Param('id') id: string) {
     const data = await this.service.findOne(id);
@@ -247,6 +336,7 @@ export class IndentRaiseController {
     'storreceiveapprove',
     'storissueapprove',
     'storeadmin',
+    'storeindentapprove',
   )
   async approve(
     @Param('id') id: string,
@@ -269,6 +359,7 @@ export class IndentRaiseController {
     'storreceiveapprove',
     'storissueapprove',
     'storeadmin',
+    'storeindentapprove',
   )
   async creditStock(
     @Param('id') id: string,
@@ -291,6 +382,8 @@ export class IndentRaiseController {
     'storissueapprove',
     'storissuereject',
     'storeadmin',
+    'storeindentreject',
+    'storeindentapprove',
   )
   async reject(
     @Param('id') id: string,
@@ -315,6 +408,8 @@ export class IndentRaiseController {
     'storissueedit',
     'storissueadd',
     'storeadmin',
+    'storeindentdraft',
+    'storeindentapprove',
   )
   async updateQuantity(
     @Param('id') id: string,
@@ -338,6 +433,7 @@ export class IndentRaiseController {
     'storrefilladd',
     'storissueadd',
     'storissueedit',
+    'storeindentdraft',
   )
   async delete(@Param('id') id: string, @Req() req: any) {
     const data = await this.service.delete(id, req.user);
