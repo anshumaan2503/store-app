@@ -12,6 +12,7 @@ export interface CartConfigData {
   requestTimeoutDays: number;
   requestTimeoutEnabled: boolean;
   monthEndRevertEnabled: boolean;
+  monthEndRevertDays?: number;
   indentApprovalRequired?: boolean;
   grnWorkflowEnabled?: boolean;
   indentAutoCloseDays?: number;
@@ -29,6 +30,7 @@ export class StoreCartService implements OnModuleInit {
     requestTimeoutDays: 7,
     requestTimeoutEnabled: true,
     monthEndRevertEnabled: true,
+    monthEndRevertDays: 30,
     indentApprovalRequired: false,
     grnWorkflowEnabled: false,
     indentAutoCloseDays: 30,
@@ -71,6 +73,7 @@ export class StoreCartService implements OnModuleInit {
           requestTimeoutDays: Number(created?.requestTimeoutDays) || 7,
           requestTimeoutEnabled: created?.requestTimeoutEnabled !== false,
           monthEndRevertEnabled: created?.monthEndRevertEnabled !== false,
+          monthEndRevertDays: Number(created?.monthEndRevertDays) || 30,
           indentApprovalRequired: Boolean(created?.indentApprovalRequired),
           grnWorkflowEnabled: Boolean(created?.grnWorkflowEnabled),
           indentAutoCloseDays: Number(created?.indentAutoCloseDays) || 30,
@@ -85,6 +88,7 @@ export class StoreCartService implements OnModuleInit {
           requestTimeoutDays: Number(cfg.requestTimeoutDays) || 7,
           requestTimeoutEnabled: cfg.requestTimeoutEnabled !== false,
           monthEndRevertEnabled: cfg.monthEndRevertEnabled !== false,
+          monthEndRevertDays: Number(cfg.monthEndRevertDays) || 30,
           indentApprovalRequired: Boolean(cfg.indentApprovalRequired),
           grnWorkflowEnabled: Boolean(cfg.grnWorkflowEnabled),
           indentAutoCloseDays: Number(cfg.indentAutoCloseDays) || 30,
@@ -121,6 +125,10 @@ export class StoreCartService implements OnModuleInit {
     return this.cachedConfig.monthEndRevertEnabled !== false;
   }
 
+  getMonthEndRevertDays(): number {
+    return Math.max(1, Number(this.cachedConfig.monthEndRevertDays) || 30);
+  }
+
   // Indent Approval Switch
   isIndentApprovalRequired(): boolean {
     return this.cachedConfig.indentApprovalRequired === true;
@@ -154,6 +162,7 @@ export class StoreCartService implements OnModuleInit {
     requestTimeoutDays?: number;
     requestTimeoutEnabled?: boolean;
     monthEndRevertEnabled?: boolean;
+    monthEndRevertDays?: number;
     indentApprovalRequired?: boolean;
     grnWorkflowEnabled?: boolean;
     indentAutoCloseDays?: number;
@@ -175,6 +184,9 @@ export class StoreCartService implements OnModuleInit {
     }
     if (dto.monthEndRevertEnabled !== undefined) {
       update.monthEndRevertEnabled = Boolean(dto.monthEndRevertEnabled);
+    }
+    if (dto.monthEndRevertDays !== undefined) {
+      update.monthEndRevertDays = Math.max(1, Number(dto.monthEndRevertDays) || 30);
     }
     if (dto.indentApprovalRequired !== undefined) {
       update.indentApprovalRequired = Boolean(dto.indentApprovalRequired);
@@ -207,6 +219,7 @@ export class StoreCartService implements OnModuleInit {
       requestTimeoutDays: Number(doc?.requestTimeoutDays) || 7,
       requestTimeoutEnabled: doc?.requestTimeoutEnabled !== false,
       monthEndRevertEnabled: doc?.monthEndRevertEnabled !== false,
+      monthEndRevertDays: Number(doc?.monthEndRevertDays) || 30,
       indentApprovalRequired: Boolean(doc?.indentApprovalRequired),
       grnWorkflowEnabled: Boolean(doc?.grnWorkflowEnabled),
       indentAutoCloseDays: Number(doc?.indentAutoCloseDays) || 30,

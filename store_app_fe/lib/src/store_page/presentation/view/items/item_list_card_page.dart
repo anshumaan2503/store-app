@@ -147,7 +147,6 @@ class ItemListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasImage = item.imageUrl.toString().trim().isNotEmpty;
-    final isOut = item.stockAvailableQuantity <= 0;
     final isMobile = MediaQuery.of(context).size.width < 700;
 
     // Low-stock alert bell indicator
@@ -300,104 +299,22 @@ class ItemListCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title + Status Chip + Low-Stock Bell
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.itemName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _ink900,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14.5,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final user = ref.watch(userFindOneDataStreamProvider).value;
-                        final canRaise = user?.canIndentRaise ?? false;
-                        if (!canRaise) return const SizedBox.shrink();
-
-                        return Tooltip(
-                          message: isItemMaxReached
-                              ? 'Maximum quantity reached (${item.maxCapacity}) — cannot raise indent'
-                              : 'Raise Indent Request',
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: isItemMaxReached
-                                ? () {
-                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        backgroundColor: const Color(0xFFC62828),
-                                        content: Text(
-                                          'Item "${item.itemName}" has reached its maximum quantity of ${item.maxCapacity}. Manual indent request cannot be generated.',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                : () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            StockRefillRequestCreatePage(item: item),
-                                      ),
-                                    );
-                                  },
-                            child: Container(
-                              padding: const EdgeInsets.all(3.5),
-                              decoration: BoxDecoration(
-                                color: isItemMaxReached
-                                    ? const Color(0xFFF5F5F5)
-                                    : const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: isItemMaxReached
-                                      ? const Color(0xFFE0E0E0)
-                                      : const Color(0xFFBFDBFE),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Icon(
-                                isItemMaxReached
-                                    ? Icons.block_rounded
-                                    : Icons.post_add_rounded,
-                                size: 15,
-                                color: isItemMaxReached
-                                    ? const Color(0xFF9E9E9E)
-                                    : const Color(0xFF1D4ED8),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    if (stockBell != null) ...[
-                      const SizedBox(width: 4),
-                      stockBell,
-                    ],
-                    const SizedBox(width: 6),
-                    StockStatusChip(
-                      availableQty: item.stockAvailableQuantity,
-                      minStock:
-                          item.minStockQuantity > 0
-                              ? item.minStockQuantity
-                              : null,
-                      isIndentReady: item.isIndentReady,
-                      compact: true,
-                    ),
-                  ],
+                // 1. Item Name (Full-width details column, clean 2-line breathing room)
+                Text(
+                  item.itemName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink900,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14.5,
+                    height: 1.25,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
 
-                // Code + Category tags row
+                // 2. Specifications Row (Item Code + Category + Unit + Min Stock + Scrap)
                 Wrap(
                   key: detailsKey,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -424,6 +341,49 @@ class ItemListCard extends StatelessWidget {
                         ),
                       ),
                     ),
+
+                    if (item.categoryLabel.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _ink900.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: _stroke.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Text(
+                          item.categoryLabel,
+                          style: const TextStyle(
+                            color: _ink700,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+
+                    if (item.unit.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _surfaceAlt.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          item.unit,
+                          style: const TextStyle(
+                            color: _ink600,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
 
                     if (item.minStockQuantity > 0)
                       Container(
@@ -470,37 +430,28 @@ class ItemListCard extends StatelessWidget {
                           ),
                         ),
                       ),
-
-                    if (item.categoryLabel.isNotEmpty)
-                      Text(
-                        item.categoryLabel,
-                        style: const TextStyle(
-                          color: _ink700,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11.5,
-                        ),
-                      ),
-
-                    if (item.unit.isNotEmpty)
-                      Text(
-                        '• ${item.unit}',
-                        style: const TextStyle(
-                          color: _ink600,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11.5,
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
 
-                // Stock Metrics Row
+                // Stock Status & Metrics Row
                 Wrap(
                   key: stockMetricsKey,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: 6,
                   runSpacing: 4,
                   children: [
+                    // Stock Status Indicator (In Stock / Low / Out)
+                    StockStatusChip(
+                      availableQty: item.stockAvailableQuantity,
+                      minStock: item.minStockQuantity > 0
+                          ? item.minStockQuantity
+                          : null,
+                      isIndentReady: item.isIndentReady,
+                      compact: true,
+                    ),
+                    if (stockBell != null) stockBell,
+
                     // 1. Available Badge (Deducts active in-cart units in real time)
                     Consumer(
                       builder: (context, ref, _) {
@@ -841,7 +792,7 @@ class ItemListCard extends StatelessWidget {
           ),
           if (!isMobile) ...[
             const SizedBox(width: 8),
-            _buildActionButtons(context),
+            _buildActionButtons(context, isItemMaxReached: isItemMaxReached),
           ],
         ],
       ),
@@ -851,7 +802,7 @@ class ItemListCard extends StatelessWidget {
         const SizedBox(height: 6),
         Align(
           alignment: Alignment.centerRight,
-          child: _buildActionButtons(context),
+          child: _buildActionButtons(context, isItemMaxReached: isItemMaxReached),
         ),
       ],
     ],
@@ -871,7 +822,7 @@ class ItemListCard extends StatelessWidget {
     return RepaintBoundary(child: cardContent);
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  Widget _buildActionButtons(BuildContext context, {required bool isItemMaxReached}) {
     return Wrap(
       key: actionsKey,
       spacing: 6,
@@ -879,6 +830,50 @@ class ItemListCard extends StatelessWidget {
       alignment: WrapAlignment.end,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        // Raise Indent Request button (for indent role users)
+        Consumer(
+          builder: (context, ref, _) {
+            final user = ref.watch(userFindOneDataStreamProvider).value;
+            final canRaise = user?.canIndentRaise ?? false;
+            if (!canRaise) return const SizedBox.shrink();
+
+            return _ActionIconButton(
+              icon: isItemMaxReached
+                  ? Icons.block_rounded
+                  : Icons.post_add_rounded,
+              tooltip: isItemMaxReached
+                  ? 'Maximum quantity reached (${item.maxCapacity}) — cannot raise indent'
+                  : 'Raise Indent Request',
+              color: isItemMaxReached
+                  ? const Color(0xFFF5F5F5)
+                  : const Color(0xFFEFF6FF),
+              iconColor: isItemMaxReached
+                  ? const Color(0xFF9E9E9E)
+                  : const Color(0xFF1D4ED8),
+              onTap: isItemMaxReached
+                  ? () {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: const Color(0xFFC62828),
+                          content: Text(
+                            'Item "${item.itemName}" has reached its maximum quantity of ${item.maxCapacity}. Manual indent request cannot be generated.',
+                          ),
+                        ),
+                      );
+                    }
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              StockRefillRequestCreatePage(item: item),
+                        ),
+                      );
+                    },
+            );
+          },
+        ),
         Consumer(
           builder: (context, ref, _) {
             final user = ref.watch(userFindOneDataStreamProvider).value;

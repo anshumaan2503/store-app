@@ -39,17 +39,19 @@ void showStoreHelpSheet(
 /// Dedicated Help Button placed in the Store header for every account.
 class StoreHelpButton extends ConsumerWidget {
   final ValueChanged<List<GuidedTourStep>>? onStartTour;
-  const StoreHelpButton({super.key, this.onStartTour});
+  final double size;
+  const StoreHelpButton({super.key, this.onStartTour, this.size = 42});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isCompact = size < 40;
     return Container(
       key: GuidedTourController.storeHelpButtonKey,
-      width: 42,
-      height: 42,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(isCompact ? 10 : 12),
         border: Border.all(color: _stroke),
         boxShadow: const [
           BoxShadow(
@@ -62,7 +64,7 @@ class StoreHelpButton extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(isCompact ? 10 : 12),
           hoverColor: _surfaceAlt,
           onTap: () async {
             final user = ref.read(userFindOneDataStreamProvider).value;
@@ -77,13 +79,13 @@ class StoreHelpButton extends ConsumerWidget {
               showStoreHelpSheet(context, onStartTour: onStartTour);
             }
           },
-          child: const Tooltip(
+          child: Tooltip(
             message: 'Help & Walkthrough Guides',
             child: Center(
               child: Icon(
                 Icons.help_outline_rounded,
                 color: _ink900,
-                size: 20,
+                size: isCompact ? 18 : 20,
               ),
             ),
           ),

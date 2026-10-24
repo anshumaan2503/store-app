@@ -18,25 +18,27 @@ const _dangerRed = Color(0xFFE53935);
 /// Bell button placed in the Store header shell.
 /// Shows unread badge count and opens the StoreNotificationsSheet on tap.
 class StoreNotificationBellButton extends ConsumerWidget {
-  const StoreNotificationBellButton({super.key});
+  final double size;
+  const StoreNotificationBellButton({super.key, this.size = 42});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadAv = ref.watch(storeUnreadNotificationCountProvider);
     final unreadCount = unreadAv.value ?? 0;
+    final isCompact = size < 40;
 
     return Container(
-      width: 42,
-      height: 42,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(isCompact ? 10 : 12),
         border: Border.all(color: _stroke),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(isCompact ? 10 : 12),
           onTap: () {
             showModalBottomSheet(
               context: context,
@@ -54,16 +56,16 @@ class StoreNotificationBellButton extends ConsumerWidget {
                     ? Icons.notifications_active_rounded
                     : Icons.notifications_outlined,
                 color: unreadCount > 0 ? _yellowAlert : _ink900,
-                size: 20,
+                size: isCompact ? 18 : 20,
               ),
               if (unreadCount > 0)
                 Positioned(
-                  top: 4,
-                  right: 4,
+                  top: isCompact ? 1 : 4,
+                  right: isCompact ? 1 : 4,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isCompact ? 3.5 : 4,
+                      vertical: isCompact ? 0.5 : 1,
                     ),
                     decoration: BoxDecoration(
                       color: _yellowAlert,
@@ -76,16 +78,16 @@ class StoreNotificationBellButton extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
+                    constraints: BoxConstraints(
+                      minWidth: isCompact ? 14 : 16,
+                      minHeight: isCompact ? 14 : 16,
                     ),
                     child: Text(
                       unreadCount > 99 ? '99+' : '$unreadCount',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _ink900,
                         fontWeight: FontWeight.w900,
-                        fontSize: 10,
+                        fontSize: isCompact ? 8.5 : 10,
                         height: 1.1,
                       ),
                       textAlign: TextAlign.center,

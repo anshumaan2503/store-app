@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/controllers/users_controller.dart';
 import '../../../auth/domains/models/auth_model.dart';
-import '../../../components/motion_widgets.dart';
 import '../../../components/ui_tokens.dart';
 import 'issue/issues_list_page.dart';
 import 'issue/issues_return_list_page.dart';
@@ -38,7 +37,6 @@ const _stroke = Color(0xFFDFE1D6);
 
 const _accentMint = Color(0xFFB6D3CC);
 const _accentPeach = Color(0xFFF3D7C0);
-const _brandPrimary = Color(0xFF2563EB);
 
 const _bgTop = Color(0xFFFFFFF3);
 const _bgBottom = _surfaceAlt;
@@ -197,8 +195,42 @@ class StoreDashboardShellPage extends ConsumerStatefulWidget {
 class _StoreDashboardShellPageState
     extends ConsumerState<StoreDashboardShellPage>
     with TickerProviderStateMixin {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   StoreSection _section = StoreSection.items;
+  final List<StoreSection> _sectionHistory = [];
+  bool _isExiting = false;
   bool _initialSectionSet = false;
+
+  void _navigateToSection(StoreSection target) {
+    if (target == _section) return;
+    if (_sectionHistory.isEmpty || _sectionHistory.last != _section) {
+      _sectionHistory.add(_section);
+      if (_sectionHistory.length > 25) {
+        _sectionHistory.removeAt(0);
+      }
+    }
+    setState(() => _section = target);
+  }
+
+  void _handleBack() {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState?.closeDrawer();
+      return;
+    }
+    if (_sectionHistory.isNotEmpty) {
+      final prev = _sectionHistory.removeLast();
+      setState(() => _section = prev);
+      return;
+    }
+    if (_section != StoreSection.items && _section != StoreSection.dashboard) {
+      setState(() => _section = StoreSection.items);
+      return;
+    }
+    _isExiting = true;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
   late final TabController _dashTabs = TabController(length: 5, vsync: this);
 
   OverlayEntry? _guidedTourEntry;
@@ -374,11 +406,6 @@ class _StoreDashboardShellPageState
     }
   }
 
-  bool get _isMain3 =>
-      _section == StoreSection.dashboard ||
-      _section == StoreSection.items ||
-      _section == StoreSection.findItem ||
-      _section == StoreSection.places;
 
   @override
   Widget build(BuildContext context) {
@@ -430,8 +457,43 @@ class _StoreDashboardShellPageState
               : StoreSection.items;
         }
         _checkMandatoryHelpTour(u);
-        return Scaffold(
+        final bool canPopDirectly = _isExiting ||
+            (_sectionHistory.isEmpty &&
+                (_section == StoreSection.items || _section == StoreSection.dashboard) &&
+                !(_scaffoldKey.currentState?.isDrawerOpen ?? false));
+
+        return PopScope(
+          canPop: canPopDirectly,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            _handleBack();
+          },
+          child: Scaffold(
+          key: _scaffoldKey,
           backgroundColor: _surface,
+          drawer: !showSidebar
+              ? Drawer(
+                  width: 275,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 10, 0, 10),
+                      child: _UnifiedStoreSidebar(
+                        selected: _section,
+                        user: u,
+                        isDrawer: true,
+                        onBackToPortal: widget.showBack ? _handleBack : null,
+                        onSelect: (s) {
+                          if (s == StoreSection.findItem && !u.canFindItemNav) return;
+                          if (s == StoreSection.places && !u.canPlaces) return;
+                          _navigateToSection(s);
+                        },
+                      ),
+                    ),
+                  ),
+                )
+              : null,
           body: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -451,10 +513,11 @@ class _StoreDashboardShellPageState
                             _UnifiedStoreSidebar(
                               selected: _section,
                               user: u,
+                              onBackToPortal: widget.showBack ? _handleBack : null,
                               onSelect: (s) {
                                 if (s == StoreSection.findItem && !u.canFindItemNav) return;
                                 if (s == StoreSection.places && !u.canPlaces) return;
-                                setState(() => _section = s);
+                                _navigateToSection(s);
                               },
                             ),
                             const SizedBox(width: 12),
@@ -472,18 +535,8 @@ class _StoreDashboardShellPageState
             ),
           ),
 
-          // Mobile: bottom nav only for Dashboard/Items/Places (like your structure)
-          bottomNavigationBar:
-              showSidebar
-                  ? null
-                  : _BottomNav(
-                    section: _section,
-                    user: u,
-                    onChange: (s) {
-                      if (s == StoreSection.findItem && !u.canFindItemNav) return;
-                      setState(() => _section = s);
-                    },
-                  ),
+
+          ),
         );
       },
     );
@@ -501,241 +554,149 @@ class _StoreDashboardShellPageState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _HeaderCard(
-          showBack: widget.showBack,
           title: title,
           subtitle: 'Inventory & Operations',
           leadingIcon: leadingIcon,
-          onBack: () {
-            if (_section != StoreSection.items && _section != StoreSection.dashboard) {
-              setState(() => _section = StoreSection.items);
-            } else {
-              Navigator.maybePop(context);
-            }
-          },
+          onOpenDrawer: !showSidebar ? () => _scaffoldKey.currentState?.openDrawer() : null,
           onStartTour: _startGuidedTour,
-          // 3-dots menu to access Receive, Issue, Return on mobile/tablet or top header
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (user.canIndentDraft) ...[
-                Consumer(
-                  builder: (context, ref, _) {
-                    final draftState = ref.watch(indentDraftControllerProvider);
-                    return Badge.count(
-                      count: draftState.lineCount,
-                      isLabelVisible: draftState.lineCount > 0,
-                      backgroundColor: _ink900,
-                      textColor: _surface,
-                      child: Tooltip(
-                        message: 'Indent Cart (${draftState.lineCount})',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const IndentDraftsPage(),
+          // Trailing action buttons (Indent Cart, Requisition Cart, and Admin Settings)
+          trailing: Builder(
+            builder: (context) {
+              final sw = MediaQuery.of(context).size.width;
+              final isMob = sw < 600;
+              final bSize = isMob ? 34.0 : 42.0;
+              final iSize = isMob ? 18.0 : 20.0;
+              final aGap = isMob ? 5.0 : 8.0;
+
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (user.canIndentDraft) ...[
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final draftState = ref.watch(indentDraftControllerProvider);
+                        return Badge.count(
+                          count: draftState.lineCount,
+                          isLabelVisible: draftState.lineCount > 0,
+                          backgroundColor: _ink900,
+                          textColor: _surface,
+                          smallSize: isMob ? 8 : null,
+                          textStyle: TextStyle(
+                            fontSize: isMob ? 9 : 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          child: Tooltip(
+                            message: 'Indent Cart (${draftState.lineCount})',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(isMob ? 10 : 12),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const IndentDraftsPage(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                key: GuidedTourController.indentCartButtonKey,
+                                width: bSize,
+                                height: bSize,
+                                decoration: BoxDecoration(
+                                  color: _surface,
+                                  borderRadius: BorderRadius.circular(isMob ? 10 : 12),
+                                  border: Border.all(color: _stroke),
+                                ),
+                                child: Icon(
+                                  Icons.post_add_rounded,
+                                  color: _ink900,
+                                  size: iSize,
+                                ),
                               ),
-                            );
-                          },
-                          child: Container(
-                            key: GuidedTourController.indentCartButtonKey,
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: _surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: _stroke),
-                            ),
-                            child: const Icon(
-                              Icons.post_add_rounded,
-                              color: _ink900,
-                              size: 20,
                             ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (user.canIssue) ...[
-                Consumer(
-                  builder: (context, ref, _) {
-                    final cart = ref.watch(storeCartProvider);
-                    return Badge.count(
-                      count: cart.lineCount,
-                      isLabelVisible: cart.lineCount > 0,
-                      backgroundColor: _ink900,
-                      textColor: _surface,
-                      child: Tooltip(
-                        message: 'Requisition Cart (${cart.lineCount})',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const StoreCartPage(),
+                        );
+                      },
+                    ),
+                    SizedBox(width: aGap),
+                  ],
+                  if (user.canIssue) ...[
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final cart = ref.watch(storeCartProvider);
+                        return Badge.count(
+                          count: cart.lineCount,
+                          isLabelVisible: cart.lineCount > 0,
+                          backgroundColor: _ink900,
+                          textColor: _surface,
+                          smallSize: isMob ? 8 : null,
+                          textStyle: TextStyle(
+                            fontSize: isMob ? 9 : 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          child: Tooltip(
+                            message: 'Requisition Cart (${cart.lineCount})',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(isMob ? 10 : 12),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const StoreCartPage(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                key: GuidedTourController.requisitionCartHeaderKey,
+                                width: bSize,
+                                height: bSize,
+                                decoration: BoxDecoration(
+                                  color: _surface,
+                                  borderRadius: BorderRadius.circular(isMob ? 10 : 12),
+                                  border: Border.all(color: _stroke),
+                                ),
+                                child: Icon(
+                                  Icons.shopping_cart_outlined,
+                                  color: _ink900,
+                                  size: iSize,
+                                ),
                               ),
-                            );
-                          },
-                          child: Container(
-                            key: GuidedTourController.requisitionCartHeaderKey,
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: _surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: _stroke),
-                            ),
-                            child: const Icon(
-                              Icons.shopping_cart_outlined,
-                              color: _ink900,
-                              size: 20,
                             ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (user.isSuperAdmin)
-                Builder(
-                  builder: (context) {
-                    final w = MediaQuery.of(context).size.width;
-                    if (w < 430) return const SizedBox.shrink();
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Tooltip(
+                        );
+                      },
+                    ),
+                    if (user.isSuperAdmin && sw >= 430) SizedBox(width: aGap),
+                  ],
+                  if (user.isSuperAdmin)
+                    Builder(
+                      builder: (context) {
+                        if (sw < 430) return const SizedBox.shrink();
+                        return Tooltip(
                           message: 'Settings',
                           child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(isMob ? 10 : 12),
                             onTap: () => showCartTimerSettingsSheet(context),
                             child: Container(
-                              width: 42,
-                              height: 42,
+                              width: bSize,
+                              height: bSize,
                               decoration: BoxDecoration(
                                 color: _surface,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(isMob ? 10 : 12),
                                 border: Border.all(color: _stroke),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.tune_rounded,
-                                color: _brandPrimary,
-                                size: 20,
+                                color: _ink900,
+                                size: iSize,
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                    );
-                  },
-                ),
-              if (!showSidebar &&
-                  (user.canReceive ||
-                      user.canIssue ||
-                      user.canReturn ||
-                      user.canIndentsNav ||
-                      user.isSuperAdmin))
-                PopupMenuButton<StoreSection>(
-                  tooltip: 'More Sections',
-                  onSelected: (s) => setState(() => _section = s),
-                  itemBuilder: (_) {
-                    final items = <PopupMenuEntry<StoreSection>>[];
-
-                    if (user.canIndentsNav) {
-                      items.add(
-                        const PopupMenuItem<StoreSection>(
-                          value: StoreSection.indents,
-                          child: Row(
-                            children: [
-                              Icon(Icons.post_add_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Indents'),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-
-                    if (user.canReceive) {
-                      items.add(
-                        const PopupMenuItem<StoreSection>(
-                          value: StoreSection.receive,
-                          child: Row(
-                            children: [
-                              Icon(Icons.inbox_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Receive'),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-
-                    if (user.canIssue) {
-                      items.add(
-                        const PopupMenuItem<StoreSection>(
-                          value: StoreSection.issue,
-                          child: Row(
-                            children: [
-                              Icon(Icons.call_split_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Issue'),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    if (user.canReturn) {
-                      items.add(
-                        const PopupMenuItem<StoreSection>(
-                          value: StoreSection.returns,
-                          child: Row(
-                            children: [
-                              Icon(Icons.reset_tv_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Return'),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    if (user.isSuperAdmin) {
-                      items.add(
-                        const PopupMenuItem<StoreSection>(
-                          value: StoreSection.admin,
-                          child: Row(
-                            children: [
-                              Icon(Icons.manage_accounts_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Text('Manage Users'),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    return items;
-                  },
-
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: _surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _stroke),
+                        );
+                      },
                     ),
-                    child: const Icon(Icons.more_vert, color: _ink900),
-                  ),
-                ),
-            ],
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 12),
@@ -867,16 +828,26 @@ class _UnifiedStoreSidebar extends StatelessWidget {
     required this.selected,
     required this.user,
     required this.onSelect,
+    this.isDrawer = false,
+    this.onBackToPortal,
   });
 
   final StoreSection selected;
   final AuthModel user;
   final ValueChanged<StoreSection> onSelect;
+  final bool isDrawer;
+  final VoidCallback? onBackToPortal;
 
   bool _isSelected(StoreSection s) => selected == s;
 
   @override
   Widget build(BuildContext context) {
+    void handleSelect(StoreSection s) {
+      if (isDrawer) {
+        Navigator.pop(context);
+      }
+      onSelect(s);
+    }
     final initials = user.name.trim().isNotEmpty
         ? user.name.trim().substring(0, 1).toUpperCase()
         : 'U';
@@ -889,7 +860,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                 : 'Store Staff';
 
     return Container(
-      width: 215,
+      width: isDrawer ? 275 : 215,
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(16),
@@ -906,6 +877,46 @@ class _UnifiedStoreSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (onBackToPortal != null) ...[
+            Tooltip(
+              message: 'Exit Store & return to main app dashboard',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    if (isDrawer) Navigator.pop(context);
+                    onBackToPortal!();
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _surfaceAlt.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _stroke),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.arrow_back_rounded, size: 14, color: _ink900),
+                        SizedBox(width: 6),
+                        Text(
+                          'Back to Portal',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: _ink900,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
           // Store Branding Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
@@ -970,6 +981,24 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (isDrawer)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _stroke),
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: _ink900,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -990,14 +1019,14 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                     inactiveIcon: Icons.grid_view_outlined,
                     label: 'Dashboard',
                     selected: _isSelected(StoreSection.dashboard),
-                    onTap: () => onSelect(StoreSection.dashboard),
+                    onTap: () => handleSelect(StoreSection.dashboard),
                   ),
                   _SidebarItem(
                     activeIcon: Icons.list_alt_rounded,
                     inactiveIcon: Icons.list_alt_outlined,
                     label: 'Items',
                     selected: _isSelected(StoreSection.items),
-                    onTap: () => onSelect(StoreSection.items),
+                    onTap: () => handleSelect(StoreSection.items),
                   ),
                   if (user.canFindItemNav)
                     _SidebarItem(
@@ -1006,7 +1035,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                       inactiveIcon: Icons.search_rounded,
                       label: 'Find Item',
                       selected: _isSelected(StoreSection.findItem),
-                      onTap: () => onSelect(StoreSection.findItem),
+                      onTap: () => handleSelect(StoreSection.findItem),
                     ),
                   if (user.canPlaces)
                     _SidebarItem(
@@ -1015,7 +1044,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                       inactiveIcon: Icons.place_outlined,
                       label: 'Places',
                       selected: _isSelected(StoreSection.places),
-                      onTap: () => onSelect(StoreSection.places),
+                      onTap: () => handleSelect(StoreSection.places),
                     ),
 
                   if (user.canReceive || user.canIssue || user.canReturn || user.canIndentsNav) ...[
@@ -1033,7 +1062,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                         inactiveIcon: Icons.post_add_outlined,
                         label: 'Indents',
                         selected: _isSelected(StoreSection.indents),
-                        onTap: () => onSelect(StoreSection.indents),
+                        onTap: () => handleSelect(StoreSection.indents),
                       ),
                     if (user.canReceive)
                       _SidebarItem(
@@ -1041,7 +1070,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                         inactiveIcon: Icons.move_to_inbox_outlined,
                         label: 'Receive',
                         selected: _isSelected(StoreSection.receive),
-                        onTap: () => onSelect(StoreSection.receive),
+                        onTap: () => handleSelect(StoreSection.receive),
                       ),
                     if (user.canIssue)
                       _SidebarItem(
@@ -1050,7 +1079,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                         inactiveIcon: Icons.call_split_outlined,
                         label: 'Issue',
                         selected: _isSelected(StoreSection.issue),
-                        onTap: () => onSelect(StoreSection.issue),
+                        onTap: () => handleSelect(StoreSection.issue),
                       ),
                     if (user.canReturn)
                       _SidebarItem(
@@ -1058,7 +1087,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                         inactiveIcon: Icons.restart_alt_rounded,
                         label: 'Return',
                         selected: _isSelected(StoreSection.returns),
-                        onTap: () => onSelect(StoreSection.returns),
+                        onTap: () => handleSelect(StoreSection.returns),
                       ),
                   ],
 
@@ -1076,7 +1105,7 @@ class _UnifiedStoreSidebar extends StatelessWidget {
                       inactiveIcon: Icons.manage_accounts_outlined,
                       label: 'Manage Users',
                       selected: _isSelected(StoreSection.admin),
-                      onTap: () => onSelect(StoreSection.admin),
+                      onTap: () => handleSelect(StoreSection.admin),
                     ),
                   ],
                 ],
@@ -1241,126 +1270,35 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
-/* ---------------- Mobile Bottom Nav ---------------- */
-
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({
-    required this.section,
-    required this.onChange,
-    this.user,
-  });
-
-  final StoreSection section;
-  final ValueChanged<StoreSection> onChange;
-  final AuthModel? user;
-
-  bool get _showFindItem => user?.canFindItemNav ?? false;
-  bool get _showPlaces => user?.canPlaces ?? false;
-
-  List<StoreSection> get _destinations {
-    final list = <StoreSection>[StoreSection.dashboard, StoreSection.items];
-    if (_showFindItem) list.add(StoreSection.findItem);
-    if (_showPlaces) list.add(StoreSection.places);
-    return list;
-  }
-
-  int _indexOf(StoreSection s) {
-    final list = _destinations;
-    final idx = list.indexOf(s);
-    return idx >= 0 ? idx : 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return NavigationBarTheme(
-      data: NavigationBarThemeData(
-        backgroundColor: _surface,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: _accentMint.withValues(alpha: .55),
-        elevation: 3,
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          final sel = states.contains(WidgetState.selected);
-          return TextStyle(
-            color: sel ? _ink900 : _ink700,
-            fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
-            fontSize: 12,
-          );
-        }),
-        iconTheme: WidgetStateProperty.resolveWith((states) {
-          final sel = states.contains(WidgetState.selected);
-          return IconThemeData(color: sel ? _ink900 : _ink700, size: 24);
-        }),
-      ),
-      child: NavigationBar(
-        selectedIndex: _indexOf(section),
-        onDestinationSelected: (i) {
-          final list = _destinations;
-          if (i >= 0 && i < list.length) {
-            onChange(list[i]);
-          }
-        },
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view_rounded),
-            label: 'Dashboard',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.list_alt_outlined),
-            selectedIcon: Icon(Icons.list_alt_rounded),
-            label: 'Items',
-          ),
-          if (_showFindItem)
-            NavigationDestination(
-              key: GuidedTourController.findItemKey,
-              icon: const Icon(Icons.location_searching_rounded),
-              selectedIcon: const Icon(Icons.location_searching_rounded),
-              label: 'Find Item',
-            ),
-          if (_showPlaces)
-            NavigationDestination(
-              key: GuidedTourController.placesKey,
-              icon: const Icon(Icons.place_outlined),
-              selectedIcon: const Icon(Icons.place_rounded),
-              label: 'Places',
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-
 /* ---------------- Header Card ---------------- */
 
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({
-    required this.showBack,
     required this.title,
     required this.subtitle,
     required this.leadingIcon,
-    required this.onBack,
     this.trailing,
     this.onStartTour,
+    this.onOpenDrawer,
   });
 
-  final bool showBack;
   final String title;
   final String subtitle;
   final IconData leadingIcon;
-  final VoidCallback onBack;
   final Widget? trailing;
   final ValueChanged<List<GuidedTourStep>>? onStartTour;
+  final VoidCallback? onOpenDrawer;
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    // On narrow screens or when back button is shown, omit the redundant leading icon to conserve space
-    final hideLeadingIcon = (showBack && screenWidth < 460) || screenWidth < 415;
-    final actionGap = screenWidth < 400 ? 5.0 : 8.0;
+    final isMobile = screenWidth < 600;
+    final btnSize = isMobile ? 34.0 : 42.0;
+    final iconSize = isMobile ? 18.0 : 20.0;
+    final actionGap = isMobile ? 5.0 : 8.0;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      padding: EdgeInsets.fromLTRB(isMobile ? 10 : 12, isMobile ? 10 : 12, isMobile ? 10 : 12, isMobile ? 10 : 12),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(16),
@@ -1375,27 +1313,51 @@ class _HeaderCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (showBack)
-            AppBackButton(
-              onPressed: onBack,
+          // Left: Always Hamburger Button on Mobile (opens drawer), or Section Icon on Web
+          if (onOpenDrawer != null) ...[
+            Tooltip(
+              message: 'Open Navigation Sidebar',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
+                onTap: onOpenDrawer,
+                child: Container(
+                  width: btnSize,
+                  height: btnSize,
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
+                    border: Border.all(color: _stroke),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0A000000),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.menu_rounded, color: _ink900, size: iconSize + 2),
+                ),
+              ),
             ),
-          if (showBack && !hideLeadingIcon) const SizedBox(width: 10),
-          if (!hideLeadingIcon) ...[
+            const SizedBox(width: 10),
+          ] else ...[
+            // On Web/Desktop: Clean section icon in the card header (Back to Portal is in the sidebar)
             Container(
-              width: 38,
-              height: 38,
+              width: btnSize,
+              height: btnSize,
               decoration: BoxDecoration(
-                color: _stroke,
+                color: _stroke.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: _stroke),
               ),
-              child: Icon(leadingIcon, color: _ink900),
+              child: Icon(leadingIcon, color: _ink900, size: iconSize),
             ),
             const SizedBox(width: 12),
           ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   title,
@@ -1405,42 +1367,39 @@ class _HeaderCard extends StatelessWidget {
                     color: _ink900,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _ink600,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                if (!isMobile) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _ink600,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 6),
-          Flexible(
-            fit: FlexFit.loose,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const StoreNotificationBellButton(),
-                  SizedBox(width: actionGap),
-                  StoreHelpButton(onStartTour: onStartTour),
-                  if (trailing != null) ...[
-                    SizedBox(width: actionGap),
-                    trailing!,
-                  ],
-                ],
-              ),
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              StoreNotificationBellButton(size: btnSize),
+              if (screenWidth >= 380) ...[
+                SizedBox(width: actionGap),
+                StoreHelpButton(onStartTour: onStartTour, size: btnSize),
+              ],
+              if (trailing != null) ...[
+                SizedBox(width: actionGap),
+                trailing!,
+              ],
+            ],
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:store_app/src/auth/shared/providers/auth_model_provider.dart';
@@ -11,7 +12,7 @@ const _ink600 = Color(0xFF867471);
 const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFF8F9FA);
 const _stroke = Color(0xFFDFE1D6);
-const _brandPrimary = Color(0xFF2563EB);
+const _accentMint = Color(0xFFB6D3CC);
 
 Future<void> showCartTimerSettingsSheet(BuildContext context) async {
   await showModalBottomSheet(
@@ -30,6 +31,27 @@ class StoreCartTimerSettingsSheet extends ConsumerStatefulWidget {
       _StoreCartTimerSettingsSheetState();
 }
 
+class _PresetOption {
+  const _PresetOption({
+    required this.value,
+    required this.label,
+    this.badgeText,
+  });
+
+  final int value;
+  final String label;
+  final String? badgeText;
+}
+
+String _formatDisplayValue(int val, String unit) {
+  if (unit.contains('day')) {
+    if (val == 90) return '90 days (Quarterly)';
+    if (val == 180) return '180 days (Half Yearly)';
+    if (val == 365) return '365 days (Yearly)';
+  }
+  return '$val $unit';
+}
+
 class _StoreCartTimerSettingsSheetState
     extends ConsumerState<StoreCartTimerSettingsSheet> {
   // Option 1: Cart hold timer (minutes)
@@ -40,8 +62,9 @@ class _StoreCartTimerSettingsSheetState
   late bool _reqEnabled;
   late int _reqDays;
 
-  // Option 3: Month-end uncollected items revert (toggle only)
+  // Option 3: Month-end uncollected items revert
   late bool _monthEndRevertEnabled;
+  late int _monthEndDays;
 
   // Option 4: Indent approval workflow
   late bool _indentApprovalRequired;
@@ -64,6 +87,7 @@ class _StoreCartTimerSettingsSheetState
     _reqEnabled = config.requestTimeoutEnabled;
     _reqDays = config.requestTimeoutDays;
     _monthEndRevertEnabled = config.monthEndRevertEnabled;
+    _monthEndDays = config.monthEndRevertDays;
     _indentApprovalRequired = config.indentApprovalRequired;
     _grnWorkflowEnabled = config.grnWorkflowEnabled;
     _indentAutoCloseEnabled = config.indentAutoCloseEnabled;
@@ -80,6 +104,7 @@ class _StoreCartTimerSettingsSheetState
               requestDays: _reqDays,
               requestEnabled: _reqEnabled,
               monthEndRevertEnabled: _monthEndRevertEnabled,
+              monthEndRevertDays: _monthEndDays,
               indentApprovalRequired: _indentApprovalRequired,
               grnWorkflowEnabled: _grnWorkflowEnabled,
               indentAutoCloseDays: _indentAutoCloseDays,
@@ -164,13 +189,12 @@ class _StoreCartTimerSettingsSheetState
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: _ink900,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
                 ),
                 child: const Icon(
                   Icons.tune_rounded,
-                  color: _brandPrimary,
+                  color: _accentMint,
                   size: 22,
                 ),
               ),
@@ -224,8 +248,15 @@ class _StoreCartTimerSettingsSheetState
                             currentVal: _cartMinutes,
                             unit: 'minutes',
                             min: 1,
-                            max: 120,
-                            presets: const [2, 5, 10, 15, 30, 60],
+                            max: 240,
+                            presets: const [
+                              _PresetOption(value: 2, label: '2'),
+                              _PresetOption(value: 5, label: '5'),
+                              _PresetOption(value: 10, label: '10'),
+                              _PresetOption(value: 15, label: '15'),
+                              _PresetOption(value: 30, label: '30'),
+                              _PresetOption(value: 60, label: '60'),
+                            ],
                             onChanged: (val) =>
                                 setState(() => _cartMinutes = val),
                           )
@@ -239,7 +270,7 @@ class _StoreCartTimerSettingsSheetState
                     icon: Icons.assignment_outlined,
                     title: 'Requested Items Auto-Revert',
                     subtitle: _reqEnabled
-                        ? 'Revert unapproved requests after $_reqDays days'
+                        ? 'Revert unapproved requests after ${_formatDisplayValue(_reqDays, _reqDays == 1 ? "day" : "days")}'
                         : 'Disabled: Requests stay pending indefinitely',
                     enabled: _reqEnabled,
                     onToggle: (val) => setState(() => _reqEnabled = val),
@@ -248,8 +279,18 @@ class _StoreCartTimerSettingsSheetState
                             currentVal: _reqDays,
                             unit: _reqDays == 1 ? 'day' : 'days',
                             min: 1,
-                            max: 60,
-                            presets: const [1, 3, 5, 7, 14, 30],
+                            max: 730,
+                            presets: const [
+                              _PresetOption(value: 1, label: '1'),
+                              _PresetOption(value: 3, label: '3'),
+                              _PresetOption(value: 5, label: '5'),
+                              _PresetOption(value: 7, label: '7'),
+                              _PresetOption(value: 14, label: '14'),
+                              _PresetOption(value: 30, label: '30'),
+                              _PresetOption(value: 90, label: 'Quarterly', badgeText: '90d'),
+                              _PresetOption(value: 180, label: 'Half Yearly', badgeText: '180d'),
+                              _PresetOption(value: 365, label: 'Yearly', badgeText: '365d'),
+                            ],
                             onChanged: (val) =>
                                 setState(() => _reqDays = val),
                           )
@@ -258,17 +299,37 @@ class _StoreCartTimerSettingsSheetState
 
                   const SizedBox(height: 12),
 
-                  // 3. Month-End Auto-Revert (Simple Toggle Only)
+                  // 3. Uncollected Items Auto-Revert (Ready-for-Issue)
                   _buildOptionCard(
-                    icon: Icons.calendar_month_outlined,
-                    title: 'Month-End Auto-Revert',
+                    icon: Icons.assignment_return_outlined,
+                    title: 'Uncollected Items Auto-Revert',
                     subtitle: _monthEndRevertEnabled
-                        ? 'Reverts uncollected ready-for-issue items to available stock at month end'
-                        : 'Disabled: Uncollected items remain in ready-for-issue',
+                        ? 'Reverts uncollected ready-for-issue items to available stock after ${_formatDisplayValue(_monthEndDays, _monthEndDays == 1 ? "day" : "days")}'
+                        : 'Disabled: Uncollected items remain in ready-for-issue indefinitely',
                     enabled: _monthEndRevertEnabled,
                     onToggle: (val) =>
                         setState(() => _monthEndRevertEnabled = val),
-                    content: null,
+                    content: _monthEndRevertEnabled
+                        ? _buildStepper(
+                            currentVal: _monthEndDays,
+                            unit: _monthEndDays == 1 ? 'day' : 'days',
+                            min: 1,
+                            max: 730,
+                            presets: const [
+                              _PresetOption(value: 1, label: '1'),
+                              _PresetOption(value: 3, label: '3'),
+                              _PresetOption(value: 5, label: '5'),
+                              _PresetOption(value: 7, label: '7'),
+                              _PresetOption(value: 14, label: '14'),
+                              _PresetOption(value: 30, label: '30'),
+                              _PresetOption(value: 90, label: 'Quarterly', badgeText: '90d'),
+                              _PresetOption(value: 180, label: 'Half Yearly', badgeText: '180d'),
+                              _PresetOption(value: 365, label: 'Yearly', badgeText: '365d'),
+                            ],
+                            onChanged: (val) =>
+                                setState(() => _monthEndDays = val),
+                          )
+                        : null,
                   ),
 
                   const SizedBox(height: 12),
@@ -308,7 +369,7 @@ class _StoreCartTimerSettingsSheetState
                     icon: Icons.hourglass_bottom_rounded,
                     title: 'Auto-Close Stale Indents',
                     subtitle: _indentAutoCloseEnabled
-                        ? 'Active: Unfulfilled pending indents auto-close after $_indentAutoCloseDays days (~${(_indentAutoCloseDays / 30).toStringAsFixed(1)} mo)'
+                        ? 'Active: Unfulfilled pending indents auto-close after ${_formatDisplayValue(_indentAutoCloseDays, "days")} (~${(_indentAutoCloseDays / 30).toStringAsFixed(1)} mo)'
                         : 'Disabled: Indents remain open indefinitely until fulfilled or rejected',
                     enabled: _indentAutoCloseEnabled,
                     onToggle: (val) =>
@@ -318,8 +379,16 @@ class _StoreCartTimerSettingsSheetState
                             currentVal: _indentAutoCloseDays,
                             unit: 'days',
                             min: 5,
-                            max: 180,
-                            presets: const [15, 30, 45, 60, 90],
+                            max: 730,
+                            presets: const [
+                              _PresetOption(value: 15, label: '15'),
+                              _PresetOption(value: 30, label: '30'),
+                              _PresetOption(value: 45, label: '45'),
+                              _PresetOption(value: 60, label: '60'),
+                              _PresetOption(value: 90, label: '90'),
+                              _PresetOption(value: 180, label: '6 Months', badgeText: '180d'),
+                              _PresetOption(value: 365, label: '1 Year', badgeText: '365d'),
+                            ],
                             onChanged: (val) =>
                                 setState(() => _indentAutoCloseDays = val),
                           )
@@ -381,7 +450,7 @@ class _StoreCartTimerSettingsSheetState
         color: _surfaceAlt,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: enabled ? const Color(0xFFBFDBFE) : _stroke,
+          color: enabled ? _ink900.withValues(alpha: 0.25) : _stroke,
         ),
       ),
       child: Column(
@@ -393,12 +462,12 @@ class _StoreCartTimerSettingsSheetState
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: enabled ? const Color(0xFFEFF6FF) : const Color(0xFFF1F3F5),
+                  color: enabled ? _ink900 : const Color(0xFFF1F3F5),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   icon,
-                  color: enabled ? _brandPrimary : _ink600,
+                  color: enabled ? _accentMint : _ink600,
                   size: 18,
                 ),
               ),
@@ -444,14 +513,147 @@ class _StoreCartTimerSettingsSheetState
     );
   }
 
+  Future<void> _showCustomInputDialog({
+    required BuildContext context,
+    required String title,
+    required String unit,
+    required int currentVal,
+    required int min,
+    required int max,
+    required ValueChanged<int> onConfirmed,
+  }) async {
+    final controller =
+        TextEditingController(text: currentVal > 0 ? '$currentVal' : '');
+    String? errorText;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            return AlertDialog(
+              backgroundColor: _surface,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: _ink900,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.edit_calendar_rounded,
+                        color: _accentMint, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _ink900),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Enter whole number (decimals off). Range: $min to $max $unit.',
+                    style: const TextStyle(fontSize: 12, color: _ink600),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly, // Decimals off - whole integer only!
+                    ],
+                    decoration: InputDecoration(
+                      suffixText: unit,
+                      suffixStyle: const TextStyle(
+                          fontWeight: FontWeight.w700, color: _ink700),
+                      hintText: 'e.g. 45',
+                      errorText: errorText,
+                      filled: true,
+                      fillColor: _surfaceAlt,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: _stroke),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                            color: _ink900, width: 1.5),
+                      ),
+                    ),
+                    onSubmitted: (val) {
+                      final n = int.tryParse(val.trim());
+                      if (n == null || n < min || n > max) {
+                        setDlgState(
+                            () => errorText = 'Enter between $min and $max $unit');
+                        return;
+                      }
+                      onConfirmed(n);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel',
+                      style: TextStyle(
+                          color: _ink600, fontWeight: FontWeight.w600)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final n = int.tryParse(controller.text.trim());
+                    if (n == null || n < min || n > max) {
+                      setDlgState(
+                          () => errorText = 'Enter between $min and $max $unit');
+                      return;
+                    }
+                    onConfirmed(n);
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _ink900,
+                    foregroundColor: _surface,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                  child: const Text('Apply',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildStepper({
     required int currentVal,
     required String unit,
     required int min,
     required int max,
-    required List<int> presets,
+    required List<_PresetOption> presets,
     required ValueChanged<int> onChanged,
   }) {
+    final isPresetSelected = presets.any((p) => p.value == currentVal);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -473,7 +675,9 @@ class _StoreCartTimerSettingsSheetState
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: currentVal > min ? _surfaceAlt : const Color(0xFFF1F3F5),
+                    color: currentVal > min
+                        ? _surfaceAlt
+                        : const Color(0xFFF1F3F5),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: _stroke),
                   ),
@@ -484,12 +688,50 @@ class _StoreCartTimerSettingsSheetState
                   ),
                 ),
               ),
-              Text(
-                '$currentVal $unit',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _ink900,
+              Expanded(
+                child: Tooltip(
+                  message: 'Tap to enter custom number of $unit',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      _showCustomInputDialog(
+                        context: context,
+                        title: 'Custom $unit',
+                        unit: unit,
+                        currentVal: currentVal,
+                        min: min,
+                        max: max,
+                        onConfirmed: onChanged,
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _formatDisplayValue(currentVal, unit),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _ink900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Icon(
+                            Icons.edit_outlined,
+                            size: 14,
+                            color: _ink600,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
               InkWell(
@@ -499,7 +741,9 @@ class _StoreCartTimerSettingsSheetState
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: currentVal < max ? _surfaceAlt : const Color(0xFFF1F3F5),
+                    color: currentVal < max
+                        ? _surfaceAlt
+                        : const Color(0xFFF1F3F5),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: _stroke),
                   ),
@@ -516,32 +760,70 @@ class _StoreCartTimerSettingsSheetState
 
         const SizedBox(height: 8),
 
-        // Quick presets
+        // Quick presets + Custom option
         Wrap(
           spacing: 6,
           runSpacing: 6,
-          children: presets.map((p) {
-            final isSelected = currentVal == p;
-            return ChoiceChip(
-              label: Text('$p'),
-              selected: isSelected,
-              onSelected: (selected) {
-                if (selected) onChanged(p);
+          children: [
+            ...presets.map((p) {
+              final isSelected = currentVal == p.value;
+              return ChoiceChip(
+                label: Text(p.label),
+                selected: isSelected,
+                showCheckmark: true,
+                checkmarkColor: Colors.white,
+                onSelected: (selected) {
+                  if (selected) onChanged(p.value);
+                },
+                selectedColor: _ink900,
+                backgroundColor: _surface,
+                visualDensity: VisualDensity.compact,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? Colors.white : _ink700,
+                ),
+                side: BorderSide(
+                  color: isSelected ? _ink900 : _stroke,
+                ),
+              );
+            }),
+            // Dedicated Custom Entry Chip
+            ChoiceChip(
+              avatar: Icon(
+                Icons.edit_note_rounded,
+                size: 14,
+                color: !isPresetSelected ? Colors.white : _ink600,
+              ),
+              label: Text(!isPresetSelected ? 'Custom: $currentVal' : 'Custom'),
+              selected: !isPresetSelected,
+              showCheckmark: false,
+              onSelected: (_) {
+                _showCustomInputDialog(
+                  context: context,
+                  title: 'Custom $unit',
+                  unit: unit,
+                  currentVal: currentVal,
+                  min: min,
+                  max: max,
+                  onConfirmed: onChanged,
+                );
               },
-              selectedColor: const Color(0xFFEFF6FF),
+              selectedColor: _ink900,
               backgroundColor: _surface,
               visualDensity: VisualDensity.compact,
               labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               labelStyle: TextStyle(
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? _brandPrimary : _ink700,
+                fontWeight: !isPresetSelected ? FontWeight.w700 : FontWeight.w500,
+                color: !isPresetSelected ? Colors.white : _ink700,
               ),
               side: BorderSide(
-                color: isSelected ? _brandPrimary : _stroke,
+                color: !isPresetSelected ? _ink900 : _stroke,
               ),
-            );
-          }).toList(),
+            ),
+          ],
         ),
       ],
     );

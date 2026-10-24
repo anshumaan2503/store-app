@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:store_app/src/auth/shared/providers/auth_model_provider.dart';
 import 'package:store_app/src/auth/shared/repositories/shared_preference_repository.dart';
-import '../../../../components/motion_widgets.dart';
-import '../../../../components/utils.dart';
+
 import '../../../controllers/guided_tour_controller.dart';
 import '../../../controllers/store_cart_controller.dart';
 import '../../../controllers/store_item_issue_controller.dart';
@@ -85,7 +84,7 @@ class _StoreCartPageState extends ConsumerState<StoreCartPage> {
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF2563EB),
+        backgroundColor: isError ? Colors.red.shade700 : _ink900,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
@@ -282,7 +281,7 @@ class _StoreCartPageState extends ConsumerState<StoreCartPage> {
               return Badge.count(
                 count: draftState.lineCount,
                 isLabelVisible: draftState.lineCount > 0,
-                backgroundColor: const Color(0xFF2563EB),
+                backgroundColor: _ink900,
                 textColor: _surface,
                 child: IconButton(
                   tooltip: 'View Indent Review List (${draftState.lineCount})',

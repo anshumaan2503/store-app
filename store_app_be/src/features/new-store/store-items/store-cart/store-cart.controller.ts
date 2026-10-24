@@ -41,6 +41,7 @@ export class StoreCartController {
       requestTimeoutDays?: number;
       requestTimeoutEnabled?: boolean;
       monthEndRevertEnabled?: boolean;
+      monthEndRevertDays?: number;
       indentApprovalRequired?: boolean;
       grnWorkflowEnabled?: boolean;
       indentAutoCloseDays?: number;

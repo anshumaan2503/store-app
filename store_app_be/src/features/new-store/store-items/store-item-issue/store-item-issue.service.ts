@@ -179,24 +179,14 @@ export class IssueService {
       return 0;
     }
 
-    const now = new Date();
-    // Start of the current month (e.g. 1st of month at 00:00:00.000).
-    // Any issue approved in a previous month that remains uncollected is overdue.
-    const startOfCurrentMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1,
-      0,
-      0,
-      0,
-      0,
-    );
+    const revertDays = this.storeCartService?.getMonthEndRevertDays?.() || 30;
+    const cutoffDate = new Date(Date.now() - revertDays * 24 * 60 * 60 * 1000);
 
     const overdueIssues = await this.issueModel.find({
       status: 'APPROVED',
       $or: [
-        { approvedAt: { $ne: null, $lt: startOfCurrentMonth } },
-        { approvedAt: null, createdAt: { $lt: startOfCurrentMonth } },
+        { approvedAt: { $ne: null, $lt: cutoffDate } },
+        { approvedAt: null, createdAt: { $lt: cutoffDate } },
       ],
     });
 

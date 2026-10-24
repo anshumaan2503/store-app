@@ -211,6 +211,7 @@ class StoreCartConfig {
   final int requestTimeoutDays;
   final bool requestTimeoutEnabled;
   final bool monthEndRevertEnabled;
+  final int monthEndRevertDays;
   final bool indentApprovalRequired;
   final bool grnWorkflowEnabled;
   final int indentAutoCloseDays;
@@ -222,6 +223,7 @@ class StoreCartConfig {
     this.requestTimeoutDays = 7,
     this.requestTimeoutEnabled = true,
     this.monthEndRevertEnabled = true,
+    this.monthEndRevertDays = 30,
     this.indentApprovalRequired = false,
     this.grnWorkflowEnabled = false,
     this.indentAutoCloseDays = 30,
@@ -231,6 +233,7 @@ class StoreCartConfig {
   Duration get timeoutDuration => Duration(minutes: cartTimeoutMinutes);
   Duration get requestTimeoutDuration => Duration(days: requestTimeoutDays);
   Duration get indentAutoCloseDuration => Duration(days: indentAutoCloseDays);
+  Duration get monthEndRevertDuration => Duration(days: monthEndRevertDays);
 
   StoreCartConfig copyWith({
     int? cartTimeoutMinutes,
@@ -238,6 +241,7 @@ class StoreCartConfig {
     int? requestTimeoutDays,
     bool? requestTimeoutEnabled,
     bool? monthEndRevertEnabled,
+    int? monthEndRevertDays,
     bool? indentApprovalRequired,
     bool? grnWorkflowEnabled,
     int? indentAutoCloseDays,
@@ -251,6 +255,8 @@ class StoreCartConfig {
           requestTimeoutEnabled ?? this.requestTimeoutEnabled,
       monthEndRevertEnabled:
           monthEndRevertEnabled ?? this.monthEndRevertEnabled,
+      monthEndRevertDays:
+          monthEndRevertDays ?? this.monthEndRevertDays,
       indentApprovalRequired:
           indentApprovalRequired ?? this.indentApprovalRequired,
       grnWorkflowEnabled:
@@ -280,6 +286,8 @@ class StoreCartConfig {
           ? true
           : (map['monthEndRevertEnabled'] == true ||
               map['monthEndRevertEnabled'].toString() == 'true'),
+      monthEndRevertDays:
+          int.tryParse(map['monthEndRevertDays']?.toString() ?? '30') ?? 30,
       indentApprovalRequired: map['indentApprovalRequired'] == true ||
           map['indentApprovalRequired'].toString() == 'true',
       grnWorkflowEnabled: map['grnWorkflowEnabled'] == true ||
@@ -300,6 +308,7 @@ class StoreCartConfig {
       'requestTimeoutDays': requestTimeoutDays,
       'requestTimeoutEnabled': requestTimeoutEnabled,
       'monthEndRevertEnabled': monthEndRevertEnabled,
+      'monthEndRevertDays': monthEndRevertDays,
       'indentApprovalRequired': indentApprovalRequired,
       'grnWorkflowEnabled': grnWorkflowEnabled,
       'indentAutoCloseDays': indentAutoCloseDays,
@@ -400,6 +409,7 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
     int? requestDays,
     bool? requestEnabled,
     bool? monthEndRevertEnabled,
+    int? monthEndRevertDays,
     bool? indentApprovalRequired,
     bool? grnWorkflowEnabled,
     int? indentAutoCloseDays,
@@ -414,6 +424,7 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
         if (requestDays != null) 'requestTimeoutDays': requestDays,
         if (requestEnabled != null) 'requestTimeoutEnabled': requestEnabled,
         if (monthEndRevertEnabled != null) 'monthEndRevertEnabled': monthEndRevertEnabled,
+        if (monthEndRevertDays != null) 'monthEndRevertDays': monthEndRevertDays,
         if (indentApprovalRequired != null) 'indentApprovalRequired': indentApprovalRequired,
         if (grnWorkflowEnabled != null) 'grnWorkflowEnabled': grnWorkflowEnabled,
         if (indentAutoCloseDays != null) 'indentAutoCloseDays': indentAutoCloseDays,
@@ -435,6 +446,8 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
           requestTimeoutEnabled: requestEnabled ?? state.requestTimeoutEnabled,
           monthEndRevertEnabled:
               monthEndRevertEnabled ?? state.monthEndRevertEnabled,
+          monthEndRevertDays:
+              monthEndRevertDays ?? state.monthEndRevertDays,
           indentApprovalRequired:
               indentApprovalRequired ?? state.indentApprovalRequired,
           grnWorkflowEnabled:

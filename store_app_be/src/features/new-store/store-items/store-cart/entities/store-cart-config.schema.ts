@@ -24,6 +24,9 @@ export class StoreCartConfig extends Document {
   @Prop({ default: true })
   monthEndRevertEnabled: boolean;
 
+  @Prop({ default: 30 })
+  monthEndRevertDays: number;
+
   // Indent Approval Switch: Require approval before indents appear in Receive
   @Prop({ default: false })
   indentApprovalRequired: boolean;
