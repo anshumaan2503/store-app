@@ -414,6 +414,9 @@ class AuthRepository {
               .read(spRepositoryProvider)
               .setStringValue('authToken', token);
           await ref.read(spRepositoryProvider).setStringValue('uid', uid);
+          try {
+            await ref.read(spRepositoryProvider).clearTourPreferences();
+          } catch (_) {}
 
           ref.read(authTokenProvider.notifier).updateToken(token);
 

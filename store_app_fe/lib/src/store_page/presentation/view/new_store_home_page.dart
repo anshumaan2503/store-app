@@ -1,11 +1,12 @@
-// lib/src/store/presentation/views_new/store_dashboard_shell_page.dart
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../auth/controllers/users_controller.dart';
 import '../../../auth/domains/models/auth_model.dart';
 import '../../../components/ui_tokens.dart';
+import '../../../home_page/home_screen.dart';
 import 'issue/issues_list_page.dart';
 import 'issue/issues_return_list_page.dart';
 import 'items/find_item_page.dart';
@@ -231,6 +232,18 @@ class _StoreDashboardShellPageState
       Navigator.of(context).pop();
     }
   }
+
+  void _navigateToHome() {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState?.closeDrawer();
+    }
+    _isExiting = true;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      context.go(HomeScreen.routePath);
+    }
+  }
   late final TabController _dashTabs = TabController(length: 5, vsync: this);
 
   OverlayEntry? _guidedTourEntry;
@@ -238,18 +251,21 @@ class _StoreDashboardShellPageState
   bool _mandatoryHelpChecked = false;
 
   void _checkMandatoryHelpTour(AuthModel user) {
+    if (ref.read(guidedTourSessionDismissedProvider)) return;
     if (_lastCheckedMandatoryUid == user.uid && _mandatoryHelpChecked) return;
     _lastCheckedMandatoryUid = user.uid;
     _mandatoryHelpChecked = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      if (ref.read(guidedTourSessionDismissedProvider)) return;
       final controller = ref.read(guidedTourControllerProvider);
       final hasCompleted = await controller.hasCompletedMandatoryHelp(user.uid);
-      if (!hasCompleted && mounted) {
+      if (!hasCompleted && mounted && !ref.read(guidedTourSessionDismissedProvider)) {
         final step = controller.createMandatoryHelpStep(
           user: user,
           onHelpTapped: () async {
+            _removeGuidedTourOverlay();
             final dontShowAgain = controller.isMandatoryHelpDontShowAgain;
             await controller.markMandatoryHelpCompleted(
               user.uid,
@@ -277,7 +293,7 @@ class _StoreDashboardShellPageState
     if (uid != null && mounted) {
       ref
           .read(guidedTourControllerProvider)
-          .dismissTour(uid: uid, dontShowAgain: dontShowAgain);
+          .markMandatoryHelpCompleted(uid, dontShowAgain: dontShowAgain);
     }
   }
 
@@ -306,14 +322,12 @@ class _StoreDashboardShellPageState
       _guidedTourEntry = OverlayEntry(
         builder: (context) => GuidedTourOverlay(
           onDismiss: ({required bool dontShowAgain}) {
-            _dismissGuidedTour(dontShowAgain: false, uid: user?.uid);
+            _dismissGuidedTour(dontShowAgain: dontShowAgain, uid: user?.uid);
           },
           onDontShowAgainChanged: (dontShow) {
-            if (user != null) {
-              ref
-                  .read(guidedTourControllerProvider)
-                  .dismissTour(uid: user.uid, dontShowAgain: dontShow);
-            }
+            ref
+                .read(guidedTourControllerProvider)
+                .setMandatoryHelpDontShowAgain(dontShow);
           },
         ),
       );
@@ -483,7 +497,8 @@ class _StoreDashboardShellPageState
                         selected: _section,
                         user: u,
                         isDrawer: true,
-                        onBackToPortal: widget.showBack ? _handleBack : null,
+                        onBack: widget.showBack ? _handleBack : null,
+                        onHome: _navigateToHome,
                         onSelect: (s) {
                           if (s == StoreSection.findItem && !u.canFindItemNav) return;
                           if (s == StoreSection.places && !u.canPlaces) return;
@@ -513,7 +528,8 @@ class _StoreDashboardShellPageState
                             _UnifiedStoreSidebar(
                               selected: _section,
                               user: u,
-                              onBackToPortal: widget.showBack ? _handleBack : null,
+                              onBack: widget.showBack ? _handleBack : null,
+                              onHome: _navigateToHome,
                               onSelect: (s) {
                                 if (s == StoreSection.findItem && !u.canFindItemNav) return;
                                 if (s == StoreSection.places && !u.canPlaces) return;
@@ -829,14 +845,16 @@ class _UnifiedStoreSidebar extends StatelessWidget {
     required this.user,
     required this.onSelect,
     this.isDrawer = false,
-    this.onBackToPortal,
+    this.onBack,
+    this.onHome,
   });
 
   final StoreSection selected;
   final AuthModel user;
   final ValueChanged<StoreSection> onSelect;
   final bool isDrawer;
-  final VoidCallback? onBackToPortal;
+  final VoidCallback? onBack;
+  final VoidCallback? onHome;
 
   bool _isSelected(StoreSection s) => selected == s;
 
@@ -877,129 +895,205 @@ class _UnifiedStoreSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (onBackToPortal != null) ...[
-            Tooltip(
-              message: 'Exit Store & return to main app dashboard',
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    if (isDrawer) Navigator.pop(context);
-                    onBackToPortal!();
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: _surfaceAlt.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _stroke),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.arrow_back_rounded, size: 14, color: _ink900),
-                        SizedBox(width: 6),
-                        Text(
-                          'Back to Portal',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: _ink900,
-                            letterSpacing: -0.1,
+          if (onBack != null || onHome != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  if (onBack != null)
+                    Expanded(
+                      child: Tooltip(
+                        message: 'Back',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (isDrawer) Navigator.pop(context);
+                              onBack!();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: _surfaceAlt.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: _stroke),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.arrow_back_rounded, size: 14, color: _ink900),
+                                  SizedBox(width: 5),
+                                  Flexible(
+                                    child: Text(
+                                      'Back',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: _ink900,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  if (onBack != null && onHome != null)
+                    const SizedBox(width: 8),
+                  if (onHome != null)
+                    Expanded(
+                      child: Tooltip(
+                        message: 'Home Screen',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (isDrawer) Navigator.pop(context);
+                              onHome!();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: _surfaceAlt.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: _stroke),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.home_rounded, size: 14, color: _ink900),
+                                  SizedBox(width: 5),
+                                  Flexible(
+                                    child: Text(
+                                      'Home',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: _ink900,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
-          // Store Branding Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              color: _surfaceAlt.withValues(alpha: .45),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _stroke.withValues(alpha: .7)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
+          // Store Branding Header (Interactive Home Shortcut)
+          Tooltip(
+            message: 'Home Screen',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onHome != null
+                    ? () {
+                        if (isDrawer) Navigator.pop(context);
+                        onHome!();
+                      }
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                   decoration: BoxDecoration(
-                    color: _ink900,
-                    borderRadius: BorderRadius.circular(9),
+                    color: _surfaceAlt.withValues(alpha: .45),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _stroke.withValues(alpha: .7)),
                   ),
-                  child: const Icon(
-                    Icons.store_rounded,
-                    color: _accentMint,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                  child: Row(
                     children: [
-                      const Text(
-                        'Store Inventory',
-                        style: TextStyle(
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
                           color: _ink900,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12.5,
-                          letterSpacing: -0.2,
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        child: const Icon(
+                          Icons.store_rounded,
+                          color: _accentMint,
+                          size: 18,
+                        ),
                       ),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Store Inventory',
+                              style: TextStyle(
+                                color: _ink900,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12.5,
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF10B981),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'Active Hub',
+                                  style: TextStyle(
+                                    color: _ink600,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isDrawer)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: _stroke),
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 16,
+                              color: _ink900,
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'Active Hub',
-                            style: TextStyle(
-                              color: _ink600,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
                     ],
                   ),
                 ),
-                if (isDrawer)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: _surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _stroke),
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        size: 16,
-                        color: _ink900,
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
 
@@ -1341,7 +1435,7 @@ class _HeaderCard extends StatelessWidget {
             ),
             const SizedBox(width: 10),
           ] else ...[
-            // On Web/Desktop: Clean section icon in the card header (Back to Portal is in the sidebar)
+            // On Web/Desktop: Clean section icon in the card header
             Container(
               width: btnSize,
               height: btnSize,

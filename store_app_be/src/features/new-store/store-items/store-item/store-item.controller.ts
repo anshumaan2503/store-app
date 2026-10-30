@@ -107,7 +107,6 @@ export class StoreNewItemController {
   @Permissions('storeitemdelete')
   async delete(
     @Param('id') id: string,
-    @Query('force') force: string,
     @Req() req: any,
   ) {
     const user = req.user;
@@ -125,14 +124,7 @@ export class StoreNewItemController {
       );
     }
 
-    const forceDelete =
-      isSuperAdmin ||
-      isStoreAdmin ||
-      perms.includes('storeitemdelete') ||
-      force === 'true' ||
-      force === '1';
-
-    await this.s.delete(id, user?._id || user?.uid, forceDelete);
+    await this.s.delete(id, user?._id || user?.uid);
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
     return { status: true, msg: 'Deleted' };

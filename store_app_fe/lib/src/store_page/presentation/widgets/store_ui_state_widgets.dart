@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 const _ink900 = Color(0xFF282321);
+const _ink700 = Color(0xFF4D4542);
 const _ink600 = Color(0xFF867471);
 const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFFFF4E2);
@@ -401,3 +403,183 @@ class StoreCard extends StatelessWidget {
   }
 }
 
+/// Standardized "Load More" button with item icon and active loading indicator.
+class StoreLoadMoreButton extends StatefulWidget {
+  const StoreLoadMoreButton({
+    super.key,
+    required this.onPressed,
+    this.label = 'Load more',
+    this.icon = Icons.inventory_2_rounded,
+    this.isLoading = false,
+  });
+
+  final FutureOr<void> Function()? onPressed;
+  final String label;
+  final IconData? icon;
+  final bool isLoading;
+
+  @override
+  State<StoreLoadMoreButton> createState() => _StoreLoadMoreButtonState();
+}
+
+class _StoreLoadMoreButtonState extends State<StoreLoadMoreButton> {
+  bool _internalLoading = false;
+
+  Future<void> _handleTap() async {
+    if (widget.isLoading || _internalLoading || widget.onPressed == null) return;
+    setState(() => _internalLoading = true);
+    try {
+      final res = widget.onPressed!();
+      if (res is Future) {
+        await res;
+      } else {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _internalLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = widget.isLoading || _internalLoading;
+    final displayIcon = widget.icon ?? Icons.inventory_2_rounded;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: loading ? null : _handleTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: _ink900,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                Icon(
+                  displayIcon,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              const SizedBox(width: 5),
+              Text(
+                loading ? 'Loading...' : widget.label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Standardized pagination status bar matching the Items page style.
+/// Fully responsive and mobile-optimized (prevents RenderFlex overflow on small screens).
+class StorePaginationBar extends StatelessWidget {
+  const StorePaginationBar({
+    super.key,
+    required this.currentCount,
+    required this.totalCount,
+    this.itemLabel,
+    this.canLoadMore = false,
+    this.onLoadMore,
+    this.icon = Icons.inventory_2_rounded,
+    this.isLoading = false,
+    this.maxWidth = 980,
+  });
+
+  final int currentCount;
+  final int totalCount;
+  final String? itemLabel;
+  final bool canLoadMore;
+  final FutureOr<void> Function()? onLoadMore;
+  final IconData? icon;
+  final bool isLoading;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final suffix = (itemLabel != null && itemLabel!.trim().isNotEmpty)
+        ? ' ${itemLabel!.trim()}'
+        : '';
+    final countText = 'Showing $currentCount of $totalCount$suffix';
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _stroke),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x06000000),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 8,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  countText,
+                  style: const TextStyle(
+                    color: _ink700,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (canLoadMore && onLoadMore != null) ...[
+                const SizedBox(width: 8),
+                StoreLoadMoreButton(
+                  onPressed: onLoadMore,
+                  icon: icon,
+                  isLoading: isLoading,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

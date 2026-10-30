@@ -298,32 +298,12 @@ class _RacksQtyMachineListPageState
                                   ),
                                   const SizedBox(height: 10),
 
-                                  AppCard(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'Showing ${rows.length} of ${paged.total}',
-                                          style: const TextStyle(
-                                            color: ink700,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        if (canLoadMore)
-                                          FilledButton.icon(
-                                            onPressed: () => _loadMore(paged),
-                                            icon: const Icon(
-                                              Icons.expand_more_rounded,
-                                            ),
-                                            label: const Text('Load more'),
-                                          )
-                                        else
-                                          const SizedBox.shrink(),
-                                        const SizedBox(width: 20),
-                                      ],
-                                    ),
+                                  StorePaginationBar(
+                                    currentCount: rows.length,
+                                    totalCount: paged.total,
+                                    icon: Icons.precision_manufacturing_rounded,
+                                    canLoadMore: canLoadMore,
+                                    onLoadMore: () => _loadMore(paged),
                                   ),
                                 ],
                               );

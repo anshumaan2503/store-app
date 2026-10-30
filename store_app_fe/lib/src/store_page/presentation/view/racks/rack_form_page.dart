@@ -89,14 +89,40 @@ class _RackFormPageState extends ConsumerState<RackFormPage> {
     // if (ok == true) ref.invalidate(storeRoomPagedStreamProvider);
   }
 
-  Future<void> _confirmRemoveItem(String rackId, String itemId) async {
+  Future<void> _confirmRemoveItem(
+    String rackId,
+    String itemId, {
+    int total = 0,
+    int avail = 0,
+  }) async {
+    if (total > 0 || avail > 0) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text("This action cannot be performed"),
+              content: Text(
+                'Cannot remove item from this rack because it still has stock (Total: $total, Available: $avail).\n\n'
+                'To remove this item from the rack, its quantity must be 0 (by issuing all items or transferring quantity to another rack).',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("OK"),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder:
           (ctx) => AlertDialog(
             title: const Text("Confirm"),
-            content: const Text("Do you want to remove this item?"),
+            content: const Text("Do you want to remove this item from this rack?"),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -107,7 +133,10 @@ class _RackFormPageState extends ConsumerState<RackFormPage> {
                   final ok = await ref
                       .read(storeItemsControllerProvider)
                       .transferRack(itemId: itemId, toRackId: rackId);
-                  if (ok == true) ref.invalidate(storeRoomPagedStreamProvider);
+                  if (ok == true) {
+                    ref.invalidate(storeRoomPagedStreamProvider);
+                    ref.invalidate(storeRackPagedStreamProvider);
+                  }
 
                   Navigator.pop(ctx, true);
                 },
@@ -116,7 +145,10 @@ class _RackFormPageState extends ConsumerState<RackFormPage> {
             ],
           ),
     );
-    if (ok == true) ref.invalidate(storeRoomPagedStreamProvider);
+    if (ok == true) {
+      ref.invalidate(storeRoomPagedStreamProvider);
+      ref.invalidate(storeRackPagedStreamProvider);
+    }
   }
 
   Future<void> _confirmRemoveRack(String rackId) async {
@@ -125,28 +157,42 @@ class _RackFormPageState extends ConsumerState<RackFormPage> {
       barrierDismissible: false,
       builder:
           (ctx) => AlertDialog(
-            title: const Text("Confirm"),
-            content: const Text("Do you want to remove this rack?"),
+            title: const Text("Confirm Delete"),
+            content: const Text(
+              "Are you sure you want to delete this rack?\n\nThis action cannot be undone.",
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text("Cancel"),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC62828),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
                   final ok = await ref
-                      .read(storeItemsControllerProvider)
-                      .removeRack(toRackId: rackId);
-                  if (ok == true) ref.invalidate(storeRoomPagedStreamProvider);
-
-                  Navigator.pop(ctx, true);
+                      .read(storeRackControllerProvider)
+                      .deleteRack(id: rackId);
+                  if (ok == true) {
+                    ref.invalidate(storeRoomPagedStreamProvider);
+                    ref.invalidate(storeRackPagedStreamProvider);
+                    Navigator.pop(ctx, true);
+                  } else {
+                    Navigator.pop(ctx, false);
+                  }
                 },
-                child: const Text("OK"),
+                child: const Text("Delete"),
               ),
             ],
           ),
     );
-    if (ok == true) ref.invalidate(storeRoomPagedStreamProvider);
+    if (ok == true) {
+      ref.invalidate(storeRoomPagedStreamProvider);
+      ref.invalidate(storeRackPagedStreamProvider);
+      if (mounted) Navigator.pop(context, true);
+    }
   }
 
   Future<void> _save() async {
@@ -356,11 +402,16 @@ class _RackFormPageState extends ConsumerState<RackFormPage> {
                                                     )
                                                     : const SizedBox.shrink()
                                                 : ElevatedButton(
-                                                  onPressed:
-                                                      () => _confirmRemoveItem(
-                                                        rack["_id"],
-                                                        rack["itemId"],
-                                                      ),
+                                                  onPressed: () {
+                                                    final total = int.tryParse(rack["totalStockQuantity"]?.toString() ?? '0') ?? 0;
+                                                    final avail = int.tryParse(rack["stockAvailableQuantity"]?.toString() ?? '0') ?? 0;
+                                                    _confirmRemoveItem(
+                                                      rack["_id"]?.toString() ?? '',
+                                                      rack["itemId"]?.toString() ?? '',
+                                                      total: total,
+                                                      avail: avail,
+                                                    );
+                                                  },
                                                   child: const Text(
                                                     "Remove Item",
                                                   ),

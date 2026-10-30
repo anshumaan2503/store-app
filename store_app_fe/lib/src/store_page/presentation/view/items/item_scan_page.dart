@@ -100,12 +100,51 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
   }
 
   Future<void> _confirmDelete(StoreItemsModel item) async {
-    final hasQty = _hasAnyQty(item);
-    if (hasQty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Delete is allowed only when quantity is 0.'),
-        ),
+    final hasStock = _hasAnyQty(item);
+    final hasRacks = item.rackId.any((r) => r.trim().isNotEmpty);
+
+    if (hasStock) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              title: const Text('This action cannot be performed'),
+              content: Text(
+                'Cannot delete "${item.itemName}" because it still has available stock (${item.totalStockQuantity} ${item.unit}).\n\n'
+                'Rules for deletion:\n'
+                '• Stock must reach 0 Qty (by issuing all items or transferring stock to another place).\n'
+                '• The item must then be removed from all racks/places.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
+    if (hasRacks) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              title: const Text('This action cannot be performed'),
+              content: Text(
+                'Cannot delete "${item.itemName}" because it is still attached to ${item.rackId.length} rack(s)/place(s).\n\n'
+                'Rules for deletion:\n'
+                '• The item must be removed from all racks/places first (via Edit Rack > Remove Item).\n'
+                '• Only when no places are attached to this item can it be deleted.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
       );
       return;
     }
@@ -115,7 +154,10 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
       builder:
           (_) => AlertDialog(
             title: const Text('Delete item?'),
-            content: Text('Delete "${item.itemName}" (${item.itemCode})?'),
+            content: Text(
+              'Are you sure you want to delete "${item.itemName}" (${item.itemCode})?\n\n'
+              'This action cannot be undone.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -135,10 +177,6 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
         .read(storeItemsControllerProvider)
         .deleteItems(item.id);
     if (!mounted) return;
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(ok ? 'Deleted' : 'Delete failed')));
 
     if (ok) {
       _setItemId(null);

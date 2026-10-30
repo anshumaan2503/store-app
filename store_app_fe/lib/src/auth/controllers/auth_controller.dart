@@ -116,6 +116,9 @@ class AuthNotifier extends StateNotifier<bool> {
   void logout(WidgetRef ref) async {
     ref.read(loggerProvider).i("logout pressed");
     ref.read(socketProvider).dispose(ref);
+    try {
+      await ref.read(guidedTourControllerProvider).clearAllTourPreferences();
+    } catch (_) {}
     await ref.read(spRepositoryProvider).setStringValue("uid", "");
     await ref.read(spRepositoryProvider).setStringValue("authToken", "");
     ref.read(authTokenProvider.notifier).clearToken();

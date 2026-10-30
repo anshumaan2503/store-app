@@ -91,6 +91,20 @@ enum IssueTabSection {
   submittedIndents,
 }
 
+class _AbovePaginationFloatingActionButtonLocation
+    extends FloatingActionButtonLocation {
+  const _AbovePaginationFloatingActionButtonLocation({this.offsetY = 64.0});
+
+  final double offsetY;
+
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
+    final standardOffset =
+        FloatingActionButtonLocation.endFloat.getOffset(scaffoldGeometry);
+    return Offset(standardOffset.dx, standardOffset.dy - offsetY);
+  }
+}
+
 class IssuesListPage extends ConsumerStatefulWidget {
   const IssuesListPage({
     super.key,
@@ -418,6 +432,8 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
               ],
             ],
           ),
+          floatingActionButtonLocation:
+              const _AbovePaginationFloatingActionButtonLocation(),
           floatingActionButton: () {
             final hasAccess =
                 user.isSuperAdmin ||
@@ -430,7 +446,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
 
             return KeyedSubtree(
               key: GuidedTourController.issueScanVerifyKey,
-              child: FloatingActionButton.extended(
+              child: FloatingActionButton.small(
                 key: _scanKey,
                 tooltip: 'Scan for Issue Request',
                 onPressed: () {
@@ -442,18 +458,14 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                     ),
                   );
                 },
-                elevation: 6,
+                elevation: 4,
                 backgroundColor: _ink900,
                 foregroundColor: _surface,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text(
-                  'Scan for Issue Request',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   side: const BorderSide(color: _stroke),
                 ),
+                child: const Icon(Icons.qr_code_scanner_rounded, size: 20),
               ),
             );
           }(),
@@ -543,6 +555,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                                 interactive: true,
                                 child: ListView.separated(
                                   controller: _scrollController,
+                                  padding: const EdgeInsets.only(bottom: 90),
                                   itemCount: rows.length,
                                   separatorBuilder:
                                       (_, __) => const SizedBox(height: 12),
@@ -3296,45 +3309,69 @@ class _Pager extends StatelessWidget {
       pages.add(p);
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          onPressed: page <= 1 ? null : () => onPage(page - 1),
-          icon: const Icon(Icons.chevron_left_rounded),
-        ),
-        ...pages.map((p) {
-          final active = p == page;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: InkWell(
-              onTap: () => onPage(p),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                width: 44,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: active ? _accentMint.withValues(alpha: .75) : _surface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: _stroke),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 360;
+        final btnWidth = isNarrow ? 36.0 : 42.0;
+        final btnHeight = isNarrow ? 32.0 : 34.0;
+        final btnPadding = isNarrow ? 3.0 : 5.0;
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: page <= 1 ? null : () => onPage(page - 1),
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
                 ),
-                child: Text(
-                  '$p',
-                  style: const TextStyle(
-                    color: _ink900,
-                    fontWeight: FontWeight.w900,
-                  ),
+                ...pages.map((p) {
+                  final active = p == page;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: btnPadding),
+                    child: InkWell(
+                      onTap: () => onPage(p),
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        width: btnWidth,
+                        height: btnHeight,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: active ? _accentMint.withValues(alpha: .75) : _surface,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: _stroke),
+                        ),
+                        child: Text(
+                          '$p',
+                          style: TextStyle(
+                            color: _ink900,
+                            fontWeight: FontWeight.w900,
+                            fontSize: isNarrow ? 12 : 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: page >= tp ? null : () => onPage(page + 1),
+                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
                 ),
-              ),
+              ],
             ),
-          );
-        }),
-        IconButton(
-          onPressed: page >= tp ? null : () => onPage(page + 1),
-          icon: const Icon(Icons.chevron_right_rounded),
-        ),
-      ],
+          ),
+        );
+      },
     );
   }
 }

@@ -2,6 +2,7 @@
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart' hide Border;
+import '../../widgets/store_ui_state_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -2321,41 +2322,11 @@ class _RacksGoodQtyListPageState extends ConsumerState<RacksGoodQtyListPage> {
                                     ),
                                   ),
                                   const SizedBox(height: 10),
-                                  if (canLoadMore)
-                                    _Card(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            'Showing ${rows.length} of ${paged.total}',
-                                            style: const TextStyle(
-                                              color: _ink700,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          FilledButton.icon(
-                                            onPressed: () => _loadMore(paged),
-                                            icon: const Icon(
-                                              Icons.expand_more_rounded,
-                                            ),
-                                            label: const Text('Load more'),
-                                          ),
-                                          SizedBox(width: 20),
-                                        ],
-                                      ),
-                                    )
-                                  else
-                                    _Card(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Text(
-                                        'Showing ${rows.length} of ${paged.total}',
-                                        style: const TextStyle(
-                                          color: _ink700,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
+                                    StorePaginationBar(
+                                      currentCount: rows.length,
+                                      totalCount: paged.total,
+                                      canLoadMore: canLoadMore,
+                                      onLoadMore: () => _loadMore(paged),
                                     ),
                                 ],
                               );
@@ -2782,41 +2753,11 @@ class _RacksScrapQtyListPageState extends ConsumerState<RacksScrapQtyListPage> {
                                     ),
                                   ),
                                   const SizedBox(height: 10),
-                                  if (canLoadMore)
-                                    _Card(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            'Showing ${rows.length} of ${paged.total}',
-                                            style: const TextStyle(
-                                              color: _ink700,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          FilledButton.icon(
-                                            onPressed: () => _loadMore(paged),
-                                            icon: const Icon(
-                                              Icons.expand_more_rounded,
-                                            ),
-                                            label: const Text('Load more'),
-                                          ),
-                                          SizedBox(width: 20),
-                                        ],
-                                      ),
-                                    )
-                                  else
-                                    _Card(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Text(
-                                        'Showing ${rows.length} of ${paged.total}',
-                                        style: const TextStyle(
-                                          color: _ink700,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
+                                    StorePaginationBar(
+                                      currentCount: rows.length,
+                                      totalCount: paged.total,
+                                      canLoadMore: canLoadMore,
+                                      onLoadMore: () => _loadMore(paged),
                                     ),
                                 ],
                               );

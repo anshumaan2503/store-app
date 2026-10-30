@@ -455,13 +455,15 @@ class _StoreNotificationsSheetState
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 14),
-                              FilledButton.tonalIcon(
-                                onPressed: () => ref
-                                    .read(storeNotificationControllerProvider
-                                        .notifier)
-                                    .refresh(),
-                                icon: const Icon(Icons.refresh_rounded, size: 16),
-                                label: const Text('Refresh'),
+                              Tooltip(
+                                message: 'Refresh',
+                                child: IconButton.filledTonal(
+                                  onPressed: () => ref
+                                      .read(storeNotificationControllerProvider
+                                          .notifier)
+                                      .refresh(),
+                                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                                ),
                               ),
                             ],
                           ),

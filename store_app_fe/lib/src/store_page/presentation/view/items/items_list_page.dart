@@ -974,6 +974,72 @@ class _AbovePaginationFloatingActionButtonLocation
   }
 }
 
+class _CompactScanFab extends StatelessWidget {
+  const _CompactScanFab({
+    super.key,
+    required this.heroTag,
+    required this.tooltip,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final Object heroTag;
+  final String tooltip;
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Hero(
+      tag: heroTag,
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: _ink900,
+          elevation: 4,
+          shadowColor: Colors.black.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _stroke),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: _surface,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: _surface,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11.5,
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ItemsGoodQtyListPage extends ConsumerStatefulWidget {
   const ItemsGoodQtyListPage({super.key});
 
@@ -1152,9 +1218,11 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  FloatingActionButton.extended(
+                  _CompactScanFab(
                     heroTag: 'super_admin_items_good_scan_item_qr',
                     tooltip: 'Scan Item QR',
+                    icon: Icons.qr_code_scanner,
+                    label: 'Scan Item QR',
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -1163,23 +1231,13 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                         ),
                       );
                     },
-                    elevation: 6,
-                    backgroundColor: _ink900,
-                    foregroundColor: _surface,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text(
-                      'Scan Item QR',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: _stroke),
-                    ),
                   ),
-                  const SizedBox(height: 10),
-                  FloatingActionButton.extended(
+                  const SizedBox(height: 6),
+                  _CompactScanFab(
                     heroTag: 'super_admin_items_good_scan_issue_qr',
                     tooltip: 'Scan for Issue Request',
+                    icon: Icons.qr_code_scanner,
+                    label: 'Scan for Issue Request',
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -1188,26 +1246,16 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                         ),
                       );
                     },
-                    elevation: 6,
-                    backgroundColor: _ink900,
-                    foregroundColor: _surface,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text(
-                      'Scan for Issue Request',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: _stroke),
-                    ),
                   ),
                 ],
               );
             }
 
-            return FloatingActionButton.extended(
+            return _CompactScanFab(
               heroTag: 'items_good_scan_item_qr',
               tooltip: 'Scan Item QR',
+              icon: Icons.qr_code_scanner,
+              label: 'Scan Item QR',
               onPressed: () {
                 Navigator.push(
                   context,
@@ -1216,18 +1264,6 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                   ),
                 );
               },
-              elevation: 6,
-              backgroundColor: _ink900,
-              foregroundColor: _surface,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text(
-                'Scan Item QR',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: _stroke),
-              ),
             );
           }(),
           backgroundColor: Colors.transparent,
@@ -1513,87 +1549,12 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                           const SizedBox(height: 8),
 
                           // Sleek Pagination Status Bar
-                          Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 980),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: _surface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: _stroke),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x06000000),
-                                      blurRadius: 8,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Showing ${rows.length} of ${paged.total} items',
-                                      style: const TextStyle(
-                                        color: _ink700,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    if (canLoadMore)
-                                      InkWell(
-                                        onTap: () => _loadMore(paged),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _ink900,
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.12),
-                                                blurRadius: 6,
-                                                offset: const Offset(0, 2),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.expand_more_rounded,
-                                                size: 16,
-                                                color: Colors.white,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Load more',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          StorePaginationBar(
+                            currentCount: rows.length,
+                            totalCount: paged.total,
+                            itemLabel: 'items',
+                            canLoadMore: canLoadMore,
+                            onLoadMore: () => _loadMore(paged),
                           ),
                         ],
                       );
@@ -1788,9 +1749,11 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  FloatingActionButton.extended(
+                  _CompactScanFab(
                     heroTag: 'super_admin_items_scrap_scan_item_qr',
                     tooltip: 'Scan Item QR',
+                    icon: Icons.qr_code_scanner,
+                    label: 'Scan Item QR',
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -1799,23 +1762,13 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                         ),
                       );
                     },
-                    elevation: 6,
-                    backgroundColor: _ink900,
-                    foregroundColor: _surface,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text(
-                      'Scan Item QR',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: _stroke),
-                    ),
                   ),
-                  const SizedBox(height: 10),
-                  FloatingActionButton.extended(
+                  const SizedBox(height: 6),
+                  _CompactScanFab(
                     heroTag: 'super_admin_items_scrap_scan_issue_qr',
                     tooltip: 'Scan for Issue Request',
+                    icon: Icons.qr_code_scanner,
+                    label: 'Scan for Issue Request',
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -1824,26 +1777,16 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                         ),
                       );
                     },
-                    elevation: 6,
-                    backgroundColor: _ink900,
-                    foregroundColor: _surface,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text(
-                      'Scan for Issue Request',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: _stroke),
-                    ),
                   ),
                 ],
               );
             }
 
-            return FloatingActionButton.extended(
+            return _CompactScanFab(
               heroTag: 'items_scrap_scan_item_qr',
               tooltip: 'Scan Item QR',
+              icon: Icons.qr_code_scanner,
+              label: 'Scan Item QR',
               onPressed: () {
                 Navigator.push(
                   context,
@@ -1852,18 +1795,6 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                   ),
                 );
               },
-              elevation: 6,
-              backgroundColor: _ink900,
-              foregroundColor: _surface,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text(
-                'Scan Item QR',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: _stroke),
-              ),
             );
           }(),
           backgroundColor: Colors.transparent,
@@ -2142,87 +2073,13 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                           const SizedBox(height: 8),
 
                           // Sleek Pagination Status Bar
-                          Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 980),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: _surface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: _stroke),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x06000000),
-                                      blurRadius: 8,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Showing ${rows.length} of ${paged.total} items',
-                                      style: const TextStyle(
-                                        color: _ink700,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    if (canLoadMore)
-                                      InkWell(
-                                        onTap: () => _loadMore(paged),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _ink900,
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.12),
-                                                blurRadius: 6,
-                                                offset: const Offset(0, 2),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.expand_more_rounded,
-                                                size: 16,
-                                                color: Colors.white,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Load more',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          StorePaginationBar(
+                            currentCount: rows.length,
+                            totalCount: paged.total,
+                            itemLabel: 'items',
+                            icon: Icons.precision_manufacturing_rounded,
+                            canLoadMore: canLoadMore,
+                            onLoadMore: () => _loadMore(paged),
                           ),
                         ],
                       );

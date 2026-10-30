@@ -585,7 +585,7 @@ class _LoginCardConsumerState extends ConsumerState<LoginCard> {
   Future<void> _safeNavigateToHome() async {
     if (!mounted) return;
     try {
-      ref.read(guidedTourControllerProvider).resetSession();
+      await ref.read(guidedTourControllerProvider).clearAllTourPreferences();
     } catch (_) {}
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -615,6 +615,9 @@ class _LoginCardConsumerState extends ConsumerState<LoginCard> {
     setState(() => _loading = false);
 
     if (ok) {
+      try {
+        await ref.read(guidedTourControllerProvider).clearAllTourPreferences();
+      } catch (_) {}
       await _safeNavigateToHome();
     } else {
       ScaffoldMessenger.of(

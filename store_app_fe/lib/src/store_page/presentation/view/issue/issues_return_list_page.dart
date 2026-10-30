@@ -1438,45 +1438,69 @@ class _Pager extends StatelessWidget {
       pages.add(p);
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          onPressed: page <= 1 ? null : () => onPage(page - 1),
-          icon: const Icon(Icons.chevron_left_rounded),
-        ),
-        ...pages.map((p) {
-          final active = p == page;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: InkWell(
-              onTap: () => onPage(p),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                width: 44,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: active ? _accentMint.withValues(alpha: .75) : _surface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: _stroke),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 360;
+        final btnWidth = isNarrow ? 36.0 : 42.0;
+        final btnHeight = isNarrow ? 32.0 : 34.0;
+        final btnPadding = isNarrow ? 3.0 : 5.0;
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: page <= 1 ? null : () => onPage(page - 1),
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
                 ),
-                child: Text(
-                  '$p',
-                  style: const TextStyle(
-                    color: _ink900,
-                    fontWeight: FontWeight.w900,
-                  ),
+                ...pages.map((p) {
+                  final active = p == page;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: btnPadding),
+                    child: InkWell(
+                      onTap: () => onPage(p),
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        width: btnWidth,
+                        height: btnHeight,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: active ? _accentMint.withValues(alpha: .75) : _surface,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: _stroke),
+                        ),
+                        child: Text(
+                          '$p',
+                          style: TextStyle(
+                            color: _ink900,
+                            fontWeight: FontWeight.w900,
+                            fontSize: isNarrow ? 12 : 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: page >= tp ? null : () => onPage(page + 1),
+                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
                 ),
-              ),
+              ],
             ),
-          );
-        }),
-        IconButton(
-          onPressed: page >= tp ? null : () => onPage(page + 1),
-          icon: const Icon(Icons.chevron_right_rounded),
-        ),
-      ],
+          ),
+        );
+      },
     );
   }
 }

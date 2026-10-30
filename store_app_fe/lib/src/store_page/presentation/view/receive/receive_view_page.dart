@@ -1421,54 +1421,12 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                                 ),
                                               ),
                                               const SizedBox(height: 10),
-                                              if (canLoadMore)
-                                                _Card(
-                                                  padding: const EdgeInsets.all(
-                                                    10,
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .spaceBetween,
-                                                    children: [
-                                                      Text(
-                                                        'Showing ${rows.length} of ${paged.total}',
-                                                        style: const TextStyle(
-                                                          color: _ink700,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                      ),
-                                                      FilledButton.icon(
-                                                                                                   onPressed:
-                                                            () => _loadMore(
-                                                              paged,
-                                                            ),
-                                                        icon: const Icon(
-                                                          Icons
-                                                              .expand_more_rounded,
-                                                        ),
-                                                        label: const Text(
-                                                          'Load more',
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                )
-                                              else
-                                                _Card(
-                                                  padding: const EdgeInsets.all(
-                                                    10,
-                                                  ),
-                                                  child: Text(
-                                                    'Showing ${rows.length} of ${paged.total}',
-                                                    style: const TextStyle(
-                                                      color: _ink700,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
+                                              StorePaginationBar(
+                                                currentCount: rows.length,
+                                                totalCount: paged.total,
+                                                canLoadMore: canLoadMore,
+                                                onLoadMore: () => _loadMore(paged),
+                                              ),
                                             ],
                                           ),
                                   ),
@@ -1491,28 +1449,3 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
   }
 }
 
-class _Card extends StatelessWidget {
-  const _Card({required this.child, this.padding = const EdgeInsets.all(16)});
-
-  final Widget child;
-  final EdgeInsets padding;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _stroke),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Padding(padding: padding, child: child),
-    );
-  }
-}

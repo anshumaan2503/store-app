@@ -141,6 +141,124 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
   }
 
   Future<void> _confirmDelete() async {
+    final itemAv = ref.read(itemFindOneStreamProvider(widget.initial.id));
+    final item = itemAv.value ?? widget.initial;
+
+    final hasStock = (item.totalStockQuantity > 0) ||
+        (item.stockAvailableQuantity > 0) ||
+        (item.stockRequestedQuantity > 0) ||
+        (item.stockIssueQuantity > 0) ||
+        (item.stockissueCompleted > 0) ||
+        (item.stockscrapQuantity > 0);
+
+    final hasRacks = item.rackId.any((r) => r.trim().isNotEmpty);
+
+    if (hasStock) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              backgroundColor: _surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: _stroke),
+              ),
+              title: const Row(
+                children: [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFC62828),
+                    size: 24,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Action Not Allowed',
+                    style: TextStyle(
+                      color: _ink900,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                'This action cannot be performed.\n\n'
+                'Cannot delete "${item.itemName}" because it still has available stock (${item.totalStockQuantity} ${item.unit}).\n\n'
+                'Rules for deletion:\n'
+                '• Stock must reach 0 Qty (by issuing all items or transferring stock to another place).\n'
+                '• The item must then be removed from all racks/places.',
+                style: const TextStyle(color: _ink700, fontSize: 14),
+              ),
+              actions: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _ink900,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
+    if (hasRacks) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              backgroundColor: _surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: _stroke),
+              ),
+              title: const Row(
+                children: [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFC62828),
+                    size: 24,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Action Not Allowed',
+                    style: TextStyle(
+                      color: _ink900,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                'This action cannot be performed.\n\n'
+                'Cannot delete "${item.itemName}" because it is still attached to ${item.rackId.length} rack(s)/place(s).\n\n'
+                'Rules for deletion:\n'
+                '• The item must be removed from all racks/places first (via Edit Rack > Remove Item).\n'
+                '• Only when no places are attached to this item can it be deleted.',
+                style: const TextStyle(color: _ink700, fontSize: 14),
+              ),
+              actions: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _ink900,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
     final yes = await showDialog<bool>(
       context: context,
       builder:
@@ -168,9 +286,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
               ],
             ),
             content: Text(
-              'Are you sure you want to delete "${widget.initial.itemName}" (${widget.initial.itemCode})?'
-              '${widget.initial.totalStockQuantity > 0 ? "\n\nWarning: This item currently has ${widget.initial.totalStockQuantity} in stock. Deleting it will remove the item and clear all rack stock records." : ""}'
-              '\n\nThis action cannot be undone.',
+              'Are you sure you want to delete "${item.itemName}" (${item.itemCode})?\n\nThis action cannot be undone.',
               style: const TextStyle(color: _ink700, fontSize: 14),
             ),
             actions: [
@@ -202,7 +318,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
     try {
       final ok = await ref
           .read(storeItemsControllerProvider)
-          .deleteItems(widget.initial.id);
+          .deleteItems(item.id);
 
       if (!mounted) return;
 
@@ -293,20 +409,6 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
           'Edit Item',
           style: TextStyle(color: _ink900, fontWeight: FontWeight.w900),
         ),
-        actions: [
-          if (canDelete)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Color(0xFFC62828),
-                ),
-                tooltip: 'Delete Item',
-                onPressed: _busy ? null : _confirmDelete,
-              ),
-            ),
-        ],
       ),
       body: Container(
         decoration: const BoxDecoration(

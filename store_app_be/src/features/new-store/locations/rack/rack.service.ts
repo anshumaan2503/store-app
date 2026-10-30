@@ -755,24 +755,46 @@ export class RacksService {
         ? new Types.ObjectId(operatedById)
         : null;
 
-    // Block deletion if active stock exists in this rack
+    // 1. Block deletion if active stock exists in this rack
     const activeStockCount = await this.ItemRackQtyModel.countDocuments({
       rackId: id,
-      totalStockQuantity: { $gt: 0 },
+      $or: [
+        { totalStockQuantity: { $gt: 0 } },
+        { stockAvailableQuantity: { $gt: 0 } },
+        { stockIssueQuantity: { $gt: 0 } },
+        { stockscrapQuantity: { $gt: 0 } },
+      ],
     });
     if (activeStockCount > 0) {
       throw new BadRequestException(
-        `Cannot delete rack: active stock exists in this rack (${activeStockCount} item records)`,
+        `Cannot delete rack: active stock exists in this rack (${activeStockCount} item records). Please issue or transfer all stock first.`,
       );
     }
 
-    // const session = await
+    // 2. Block deletion if any items are attached to this rack
+    const attachedItemRackQtyCount = await this.ItemRackQtyModel.countDocuments({
+      rackId: id,
+    });
+    const attachedItemsInRackDoc = await this.model.findById(id).lean();
+    const rackItemIds = Array.isArray(attachedItemsInRackDoc?.itemId)
+      ? attachedItemsInRackDoc.itemId.filter((x: any) => x && String(x).trim().length > 0)
+      : [];
+    const attachedItemCount = await this.itemModel.countDocuments({
+      rackId: { $in: [id, new Types.ObjectId(id)] },
+    });
+
+    if (attachedItemRackQtyCount > 0 || rackItemIds.length > 0 || attachedItemCount > 0) {
+      const count = Math.max(attachedItemRackQtyCount, rackItemIds.length, attachedItemCount);
+      throw new BadRequestException(
+        `Cannot delete rack: ${count} item(s) are still attached to this rack. Please remove all items from this rack before deleting it.`,
+      );
+    }
+
     try {
-      // await session.withTransaction(async () => {
       const deleted = await this.model.findByIdAndDelete(id);
       if (!deleted) throw new NotFoundException('Rack not found');
 
-      // Clean up itemrackqties and item rackId references
+      // Clean up itemrackqties and item rackId references if any legacy references remain
       await this.ItemRackQtyModel.deleteMany({ rackId: id });
       await this.itemModel.updateMany(
         { rackId: { $in: [id, new Types.ObjectId(id)] } },
@@ -781,28 +803,21 @@ export class RacksService {
 
       // log only if operator provided
       if (operatedBy) {
-        await this.trackModel.create(
-          [
-            {
-              operatedBy,
-              type: 'CANCELLED',
-              qty: 0,
-              refNo: deleted.code ?? '',
-              rackId: deleted._id,
-              itemId: deleted.itemId
-                ? new Types.ObjectId(String(deleted.itemId))
-                : null,
-              note: `Rack deleted: ${deleted.code ?? ''}`,
-            },
-          ],
-          // { session },
-        );
+        await this.trackModel.create([
+          {
+            operatedBy,
+            type: 'CANCELLED',
+            qty: 0,
+            refNo: deleted.code ?? '',
+            rackId: deleted._id,
+            itemId: null,
+            note: `Rack deleted: ${deleted.code ?? ''}`,
+          },
+        ]);
       }
-      // });
 
       return { status: true, msg: 'Rack deleted' };
     } finally {
-      // await session.endSession();
     }
   }
 

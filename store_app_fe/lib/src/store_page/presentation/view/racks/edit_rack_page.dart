@@ -18,14 +18,41 @@ class EditRackPage extends ConsumerStatefulWidget {
 }
 
 class _EditRackPageState extends ConsumerState<EditRackPage> {
-  Future<void> _confirmRemoveItem(String rackId, String itemId) async {
+  Future<void> _confirmRemoveItem(
+    String rackId,
+    String itemId, {
+    int total = 0,
+    int avail = 0,
+    String itemName = '',
+  }) async {
+    if (total > 0 || avail > 0) {
+      await showDialog<void>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text("This action cannot be performed"),
+              content: Text(
+                'Cannot remove item "$itemName" from this rack because it still has stock (Total: $total, Available: $avail).\n\n'
+                'To remove this item from the rack, its quantity must be 0 (by issuing all items or transferring quantity to another rack).',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("OK"),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder:
           (ctx) => AlertDialog(
             title: const Text("Confirm"),
-            content: const Text("Do you want to remove this item?"),
+            content: Text('Do you want to remove "$itemName" from this rack?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -62,35 +89,41 @@ class _EditRackPageState extends ConsumerState<EditRackPage> {
       barrierDismissible: false,
       builder:
           (ctx) => AlertDialog(
-            title: const Text("Confirm"),
-            content: const Text("Do you want to remove this rack?"),
+            title: const Text("Confirm Delete"),
+            content: const Text(
+              "Are you sure you want to delete this rack?\n\nThis action cannot be undone.",
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text("Cancel"),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC62828),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
                   final ok = await ref
-                      .read(storeItemsControllerProvider)
-                      .removeRack(toRackId: rackId);
+                      .read(storeRackControllerProvider)
+                      .deleteRack(id: rackId);
 
                   if (ok == true) {
                     ref.invalidate(storeRoomPagedStreamProvider);
                     ref.invalidate(storeRackPagedStreamProvider);
+                    Navigator.pop(ctx, true);
+                  } else {
+                    Navigator.pop(ctx, false);
                   }
-
-                  Navigator.pop(ctx, true);
                 },
-                child: const Text("OK"),
+                child: const Text("Delete"),
               ),
             ],
           ),
     );
 
     if (ok == true) {
-      ref.invalidate(storeRoomPagedStreamProvider);
-      ref.invalidate(storeRackPagedStreamProvider);
+      if (mounted) Navigator.pop(context, true);
     }
   }
 
@@ -254,14 +287,20 @@ class _EditRackPageState extends ConsumerState<EditRackPage> {
                                           ),
                                         ),
                                         const SizedBox(height: 10),
-                                        (user!.isSuperAdmin)
+                                        (user!.isSuperAdmin ||
+                                                user.appWorks.contains("storeadmin") ||
+                                                user.appWorks.contains("storeplacedelete"))
                                             ? ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFC62828),
+                                                foregroundColor: Colors.white,
+                                              ),
                                               onPressed:
                                                   () => _confirmRemoveRack(
                                                     rackId,
                                                   ),
                                               child: const Text(
-                                                "Remove the Rack",
+                                                "Delete Rack",
                                               ),
                                             )
                                             : SizedBox.shrink(),
@@ -365,6 +404,10 @@ class _EditRackPageState extends ConsumerState<EditRackPage> {
                                                             _confirmRemoveItem(
                                                               rackId,
                                                               itemId,
+                                                              total: total,
+                                                              avail: avail,
+                                                              itemName:
+                                                                  itemName,
                                                             ),
                                                     child: const Text(
                                                       "Remove Item",

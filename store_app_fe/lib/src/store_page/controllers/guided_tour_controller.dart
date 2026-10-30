@@ -1059,6 +1059,15 @@ class GuidedTourController {
     _mandatoryHelpDontShowAgain = false;
   }
 
+  /// Clears all tour dismissal preferences across all users and resets the session.
+  Future<void> clearAllTourPreferences() async {
+    try {
+      final sp = _ref.read(spRepositoryProvider);
+      await sp.clearTourPreferences();
+    } catch (_) {}
+    resetSession();
+  }
+
   /// Clears tour dismissal preferences and resets the session so the tour can be replayed.
   Future<void> resetTour({required String uid}) async {
     try {
@@ -1082,20 +1091,20 @@ class GuidedTourController {
   }
 
   /// Marks the mandatory Help & Support tap as completed for this user.
-  /// If [dontShowAgain] is true, permanently suppresses the popup on future logins.
-  /// If [dontShowAgain] is false, only dismisses it for the current login session.
+  /// If [dontShowAgain] is true, suppresses the popup for the current login session.
   Future<void> markMandatoryHelpCompleted(
     String uid, {
     bool? dontShowAgain,
   }) async {
     final bool shouldPersist = dontShowAgain ?? _mandatoryHelpDontShowAgain;
-    if (shouldPersist) {
+    if (shouldPersist && uid.isNotEmpty) {
       try {
         final sp = _ref.read(spRepositoryProvider);
         await sp.setStringValue('$_mandatoryHelpPrefKeyPrefix$uid', 'true');
+        await sp.setStringValue('$_prefKeyPrefix$uid', 'true');
       } catch (_) {}
     }
-    dismissTour(uid: uid, dontShowAgain: shouldPersist);
+    await dismissTour(uid: uid, dontShowAgain: shouldPersist);
   }
 
   /// Factory helper creating the mandatory first-time Help & Support step (like games).

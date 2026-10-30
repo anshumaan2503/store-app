@@ -1720,8 +1720,13 @@ class _StockRefillRequestsListViewState
     return ChoiceChip(
       label: Text(label),
       selected: isSelected,
+      showCheckmark: false,
       onSelected: (_) {
-        ref.read(refillRequestFilterStatusProvider.notifier).state = value;
+        if (isSelected && value != 'ALL') {
+          ref.read(refillRequestFilterStatusProvider.notifier).state = 'ALL';
+        } else {
+          ref.read(refillRequestFilterStatusProvider.notifier).state = value;
+        }
       },
       selectedColor: _ink900,
       backgroundColor: _surfaceAlt.withValues(alpha: 0.5),
@@ -1750,9 +1755,14 @@ class _StockRefillRequestsListViewState
     return FilterChip(
       label: Text(label),
       selected: isSelected,
+      showCheckmark: false,
       onSelected: (_) {
         setState(() {
-          _sourceFilter = value;
+          if (isSelected && value != 'ALL') {
+            _sourceFilter = 'ALL';
+          } else {
+            _sourceFilter = value;
+          }
         });
       },
       selectedColor: activeColor,
@@ -2129,7 +2139,10 @@ class _StockRefillRequestsListViewState
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _stroke),
               ),
-              child: Row(
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Balance Stock at Request: ',
@@ -2173,43 +2186,56 @@ class _StockRefillRequestsListViewState
               const SizedBox(height: 8),
             ],
 
-            // Requester & Date
-            Row(
+            // Requester & Date (Wrap-protected against narrow screen overflow)
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Icon(
-                  Icons.person_outline_rounded,
-                  size: 13,
-                  color: _ink700,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  req.requestedBy.isNotEmpty ? req.requestedBy : 'Requester',
-                  style: const TextStyle(
-                    color: _ink700,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (req.createdAt != null) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 5),
-                    child: Text('•', style: TextStyle(color: _ink700)),
-                  ),
-                  const Icon(
-                    Icons.access_time_rounded,
-                    size: 12,
-                    color: _ink700,
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    _formatDate(req.createdAt),
-                    style: const TextStyle(
-                      color: _ink600,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      size: 13,
+                      color: _ink700,
                     ),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: Text(
+                        req.requestedBy.isNotEmpty ? req.requestedBy : 'Requester',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ink700,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (req.createdAt != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.access_time_rounded,
+                        size: 12,
+                        color: _ink600,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        _formatDate(req.createdAt),
+                        style: const TextStyle(
+                          color: _ink600,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
               ],
             ),
             const SizedBox(height: 6),

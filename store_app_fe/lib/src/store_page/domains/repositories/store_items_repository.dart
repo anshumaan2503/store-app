@@ -120,9 +120,7 @@ class StoreItemsRepository {
       final res = await ref
           .read(httpClientProvider)
           .delete(
-            Uri.http(Constants.serverUrl, 'api/store/storeitems/$id', {
-              'force': 'true',
-            }),
+            Uri.http(Constants.serverUrl, 'api/store/storeitems/$id'),
             headers: headers,
           );
 

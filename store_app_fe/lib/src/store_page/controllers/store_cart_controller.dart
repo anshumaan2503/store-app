@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:store_app/src/auth/domains/providers/uid_provider.dart';
 import 'package:store_app/src/auth/shared/providers/auth_model_provider.dart';
+import 'package:store_app/src/auth/shared/providers/token_provider.dart';
 import 'package:store_app/src/auth/shared/repositories/shared_preference_repository.dart';
 import '../../components/constants.dart';
 import '../../components/socket_manager.dart';
@@ -380,9 +381,25 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
 
   Future<void> fetchConfig() async {
     try {
+      String token = _ref.read(authTokenProvider);
+      if (token.isEmpty) {
+        try {
+          final sp = _ref.read(spRepositoryProvider);
+          token = await sp.getStringValue('authToken');
+          if (token.isNotEmpty) {
+            _ref.read(authTokenProvider.notifier).updateToken(token);
+          }
+        } catch (_) {}
+      }
+
       final url = Uri.parse('${Constants.socketUrl}/api/store/cart/config');
-      final res =
-          await http.get(url, headers: {'Content-Type': 'application/json'});
+      final res = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = json.decode(res.body);
         if (decoded is Map && decoded['data'] is Map) {
@@ -432,9 +449,23 @@ class StoreCartConfigNotifier extends StateNotifier<StoreCartConfig> {
         if (updatedBy != null && updatedBy.isNotEmpty) 'updatedBy': updatedBy,
       });
 
+      String token = _ref.read(authTokenProvider);
+      if (token.isEmpty) {
+        try {
+          final sp = _ref.read(spRepositoryProvider);
+          token = await sp.getStringValue('authToken');
+          if (token.isNotEmpty) {
+            _ref.read(authTokenProvider.notifier).updateToken(token);
+          }
+        } catch (_) {}
+      }
+
       final res = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
         body: body,
       );
 

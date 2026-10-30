@@ -671,7 +671,7 @@ class RackNotifier extends StateNotifier<bool> {
     bool ok = false;
 
     final res = await _repo.deleteRack(id);
-    res.fold((_) => showSnackBar('Delete failed.'), (data) {
+    res.fold((f) => showSnackBar(f.message), (data) {
       if (data['status'] == true) {
         showSnackBar(data['msg'] ?? 'Deleted');
         ok = true;

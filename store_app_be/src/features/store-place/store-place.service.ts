@@ -211,9 +211,17 @@ export class StorePlaceService {
   }
 
   async remove(id: string) {
-    var check = await this.storePlaceSchema.findById(id);
+    const check = await this.storePlaceSchema.findById(id);
     if (!check) {
       return { msg: 'Store Place Delete Failed', status: false };
+    }
+    const itemPlaceCount = await this.spiqModel.countDocuments({
+      placeId: id,
+    });
+    if (itemPlaceCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete place: items are still attached to this place (${itemPlaceCount} item record(s)). Please remove all items first.`,
+      );
     }
     await this.storePlaceSchema.findByIdAndDelete(id);
     return { msg: 'Store Place Deleted Successfully.....', status: true };

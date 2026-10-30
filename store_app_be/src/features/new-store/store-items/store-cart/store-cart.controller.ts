@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { StoreCartService } from './store-cart.service';
 import { StoreCartGateway } from './store-cart.gateway';
 import { JwtAuthGuard } from 'src/features/guards/jwt-auth.guard';
@@ -32,8 +32,14 @@ export class StoreCartController {
 
   @Post('config')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('storeadmin')
+  @Permissions(
+    'storeadmin',
+    'storrefillapprove',
+    'storreceiveapprove',
+    'storissueapprove',
+  )
   async updateConfig(
+    @Req() req: any,
     @Body()
     body: {
       cartTimeoutMinutes?: number;
@@ -49,6 +55,10 @@ export class StoreCartController {
       updatedBy?: string;
     },
   ) {
+    if (!body.updatedBy && req?.user) {
+      body.updatedBy =
+        req.user.name || req.user.email || req.user._id?.toString();
+    }
     const data = await this.s.updateConfig(body);
     if (this.gateway?.server) {
       this.gateway.server.emit('store:cart:configUpdated', data);

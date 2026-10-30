@@ -149,13 +149,7 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
     super.dispose();
   }
 
-  Future<void> _handleSkip() async {
-    final tourState = ref.read(guidedTourStateProvider);
-    final activeStep = tourState.currentStep;
-    if (activeStep?.isMandatory == true) {
-      _bounceCtrl.forward(from: 0.0);
-      return;
-    }
+  Future<void> _handleMandatoryOpenHelp(VoidCallback? onTargetTapped) async {
     if (_isDismissing) return;
     _isDismissing = true;
     try {
@@ -163,10 +157,38 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
     } catch (_) {}
     try {
       final user = ref.read(userFindOneDataStreamProvider).value;
-      ref.read(guidedTourControllerProvider).dismissTour(
-        uid: user?.uid ?? '',
-        dontShowAgain: _dontShowAgain,
-      );
+      if (user != null) {
+        await ref
+            .read(guidedTourControllerProvider)
+            .markMandatoryHelpCompleted(user.uid, dontShowAgain: _dontShowAgain);
+      }
+    } catch (_) {}
+    widget.onDismiss(dontShowAgain: _dontShowAgain);
+    onTargetTapped?.call();
+  }
+
+  Future<void> _handleSkip() async {
+    final tourState = ref.read(guidedTourStateProvider);
+    final activeStep = tourState.currentStep;
+    if (_isDismissing) return;
+    _isDismissing = true;
+    try {
+      await _animCtrl.reverse();
+    } catch (_) {}
+    try {
+      final user = ref.read(userFindOneDataStreamProvider).value;
+      if (user != null) {
+        if (activeStep?.isMandatory == true) {
+          await ref
+              .read(guidedTourControllerProvider)
+              .markMandatoryHelpCompleted(user.uid, dontShowAgain: _dontShowAgain);
+        } else {
+          await ref.read(guidedTourControllerProvider).dismissTour(
+            uid: user.uid,
+            dontShowAgain: _dontShowAgain,
+          );
+        }
+      }
     } catch (_) {}
     widget.onDismiss(dontShowAgain: _dontShowAgain);
   }
@@ -470,13 +492,7 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
               // 1. Scrim layer with cut-out hole and pass-through hit testing
               _HoleHitTestWidget(
                 holeRRect: effectiveHighlightOpacity <= 0.0 ? RRect.zero : holeRRect,
-                onDimmedAreaTap: () {
-                  if (activeStep?.isMandatory == true) {
-                    _bounceCtrl.forward(from: 0.0);
-                    return;
-                  }
-                  _handleSkip();
-                },
+                onDimmedAreaTap: _handleSkip,
                 child: CustomPaint(
                   size: screenSize,
                   painter: _ScrimHolePainter(
@@ -611,19 +627,18 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
                   ),
                 ),
                 const Spacer(),
-                if (!isMandatory)
-                  InkWell(
-                    onTap: _handleSkip,
-                    borderRadius: BorderRadius.circular(12),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 16,
-                        color: Color(0xFF867471),
-                      ),
+                InkWell(
+                  onTap: _handleSkip,
+                  borderRadius: BorderRadius.circular(12),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: Color(0xFF867471),
                     ),
                   ),
+                ),
               ],
             ),
 
@@ -665,71 +680,64 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
 
             // Footer: Don't show again checkbox, Skip Tour button, and Next/Done button
             if (isMandatory) ...[
-              Row(
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        setState(() => _dontShowAgain = !_dontShowAgain);
-                        ref
-                            .read(guidedTourControllerProvider)
-                            .setMandatoryHelpDontShowAgain(_dontShowAgain);
-                        widget.onDontShowAgainChanged?.call(_dontShowAgain);
-                      },
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 17,
-                              height: 17,
-                              decoration: BoxDecoration(
-                                color: _dontShowAgain
-                                    ? const Color(0xFFF9A825)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: _dontShowAgain
-                                      ? const Color(0xFFF9A825)
-                                      : const Color(0xFFB2ABA5),
-                                  width: 1.4,
-                                ),
-                              ),
-                              child: _dontShowAgain
-                                  ? const Icon(
-                                      Icons.check,
-                                      size: 12,
-                                      color: Colors.white,
-                                    )
-                                  : null,
-                            ),
-                            const SizedBox(width: 7),
-                            const Flexible(
-                              child: Text(
-                                "Don't show again",
-                                style: TextStyle(
-                                  color: Color(0xFF756D69),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () {
+                  InkWell(
+                    onTap: () {
+                      setState(() => _dontShowAgain = !_dontShowAgain);
                       ref
                           .read(guidedTourControllerProvider)
                           .setMandatoryHelpDontShowAgain(_dontShowAgain);
-                      onTargetTapped?.call();
+                      widget.onDontShowAgainChanged?.call(_dontShowAgain);
                     },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: _dontShowAgain
+                                  ? const Color(0xFFF9A825)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: _dontShowAgain
+                                    ? const Color(0xFFF9A825)
+                                    : const Color(0xFFB2ABA5),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: _dontShowAgain
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 13,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            "Don't show again",
+                            style: TextStyle(
+                              color: Color(0xFF5F5854),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => _handleMandatoryOpenHelp(onTargetTapped),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFFF9A825),
                       foregroundColor: Colors.white,

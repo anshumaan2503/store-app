@@ -657,18 +657,62 @@ export class StoreNewItemService {
     }
   }
 
-  async delete(id: string, deletedBy?: string, force: boolean = false) {
-    // const session = await
+  async delete(id: string, deletedBy?: string) {
     try {
       let ok = false;
 
-      // await session.withTransaction(async () => {
       const item = await this.model.findById(this.oid(id));
-      if (!item) throw new BadRequestException('Item not found');
+      if (!item) throw new NotFoundException('Item not found');
 
-      if (!force && this.hasAnyQty(item)) {
+      // 1. Check if item has any active stock in the main document
+      if (this.hasAnyQty(item)) {
         throw new BadRequestException(
-          'Cannot delete item: quantity is not zero',
+          `Cannot delete item: quantity is not zero (current stock: ${item.totalStockQuantity ?? 0}). Please issue or transfer all stock first.`,
+        );
+      }
+
+      // 2. Check if any active stock exists in any rack for this item
+      const activeRackStockCount = await this.itemRackQtyModel.countDocuments({
+        itemId: { $in: [String(item._id), item._id] },
+        $or: [
+          { totalStockQuantity: { $gt: 0 } },
+          { stockAvailableQuantity: { $gt: 0 } },
+          { stockIssueQuantity: { $gt: 0 } },
+          { stockscrapQuantity: { $gt: 0 } },
+        ],
+      });
+      if (activeRackStockCount > 0) {
+        throw new BadRequestException(
+          'Cannot delete item: active stock exists in one or more racks. Please issue or transfer all stock first.',
+        );
+      }
+
+      // 3. Check if item is attached to ANY place/rack
+      // Rule: An item can ONLY be deleted when it has been removed from all places (attached to 0 places)
+      const attachedRacksInItem = Array.isArray(item.rackId)
+        ? item.rackId.filter((r: any) => r && String(r).trim().length > 0)
+        : (item.rackId && String(item.rackId).trim().length > 0 ? [item.rackId] : []);
+
+      const attachedRacksInRackModel = await this.rackModel.countDocuments({
+        itemId: { $in: [String(item._id), item._id] },
+      });
+
+      const attachedItemRackQtyCount = await this.itemRackQtyModel.countDocuments({
+        itemId: { $in: [String(item._id), item._id] },
+      });
+
+      if (
+        attachedRacksInItem.length > 0 ||
+        attachedRacksInRackModel > 0 ||
+        attachedItemRackQtyCount > 0
+      ) {
+        const count = Math.max(
+          attachedRacksInItem.length,
+          attachedRacksInRackModel,
+          attachedItemRackQtyCount,
+        );
+        throw new BadRequestException(
+          `Cannot delete item: item is still assigned to ${count} rack(s)/place(s). You must remove the item from all places before deleting it.`,
         );
       }
 
@@ -676,36 +720,16 @@ export class StoreNewItemService {
         this.oidOrNull(deletedBy) ??
         this.oidOrNull(String((item as any).createdBy ?? ''));
 
-      if (!operatedBy) {
-        // Keep compatibility: allow delete, but you SHOULD pass deletedBy for full audit.
-        // If you want strict mode, replace with throw.
-      }
-
-      const rackId = item.rackId ? String(item.rackId) : null;
-
       await this.model.deleteOne({ _id: item._id });
-      // .session(session);
-
-      const itemIdStr = String(item._id);
-      await this.itemRackQtyModel.deleteMany({ itemId: itemIdStr });
-      await this.rackModel.updateMany(
-        { itemId: { $in: [itemIdStr, item._id] } },
-        { $pull: { itemId: { $in: [itemIdStr, item._id] } } },
-      );
 
       if (operatedBy) {
-        const safeRackId =
-          Array.isArray(item.rackId) && item.rackId.length > 0
-            ? String(item.rackId[0])
-            : (item.rackId ? String(item.rackId) : '');
-
         await this.track({
           type: 'CANCELLED',
           qty: 0,
           operatedBy: String(operatedBy),
           itemId: String(item._id),
           categoryId: item.categoryId ?? '',
-          rackId: safeRackId,
+          rackId: '',
           refNo: String((item as any).itemNameCode ?? (item as any).itemCode ?? ''),
           note: `Item deleted: ${String((item as any).itemName ?? '')} (${String(
             (item as any).itemNameCode ?? (item as any).itemCode ?? '',
@@ -714,11 +738,8 @@ export class StoreNewItemService {
       }
 
       ok = true;
-      // });
-
       return ok;
     } finally {
-      // await session.endSession();
     }
   }
 
@@ -1523,31 +1544,38 @@ export class StoreNewItemService {
 
     const rack = await this.rackModel.findById(rackOid).lean();
     if (!rack) throw new BadRequestException('rackId not found');
+
     const stock = await this.itemRackQtyModel.findOne({
-      rackId: rackId, // ensure your schema types match (ObjectId vs string)
-      itemId: itemId,
+      rackId: { $in: [rackId, String(rackOid)] },
+      itemId: { $in: [itemId, String(itemOid)] },
     });
-    if (!stock) throw new BadRequestException('stock not found');
 
-    if (stock.stockAvailableQuantity > 0)
-      throw new BadRequestException('stock not found');
+    if (stock) {
+      const totalStock = Number(stock.totalStockQuantity || 0);
+      const availStock = Number(stock.stockAvailableQuantity || 0);
+      const issueStock = Number(stock.stockIssueQuantity || 0);
+      const scrapStock = Number(stock.stockscrapQuantity || 0);
 
-    // If you want to block inactive racks, enforce it explicitly:
-    // if (rack.isActive === false) throw new BadRequestException("Rack is inactive");
+      if (totalStock > 0 || availStock > 0 || issueStock > 0 || scrapStock > 0) {
+        throw new BadRequestException(
+          `Cannot remove item from rack: quantity is not 0 (Total: ${totalStock}, Available: ${availStock}). Please issue or transfer all stock first.`,
+        );
+      }
+    }
 
     await this.rackModel.updateOne(
-      { _id: rackOid }, // (optionally add isActive: true)
-      { $pull: { itemId: itemId } }, // adjust field name
+      { _id: rackOid },
+      { $pull: { itemId: { $in: [itemId, String(itemOid)] } } },
     );
 
     await this.model.updateOne(
       { _id: itemOid },
-      { $pull: { rackId: rackId } }, // adjust field name
+      { $pull: { rackId: { $in: [rackId, String(rackOid)] } } },
     );
 
     await this.itemRackQtyModel.deleteMany({
-      rackId: rackId, // ensure your schema types match (ObjectId vs string)
-      itemId: itemId,
+      rackId: { $in: [rackId, String(rackOid)] },
+      itemId: { $in: [itemId, String(itemOid)] },
     });
 
     await this.track({
@@ -1558,7 +1586,7 @@ export class StoreNewItemService {
       categoryId: item.categoryId ?? '',
       rackId: String(rack._id),
       refNo: String(item.itemName ?? ''),
-      note: `Removed item ${String(item._id)} from rack ${String(rack._id)}`,
+      note: `Removed item ${String(item.itemName || item._id)} from rack ${String(rack.code || rack._id)}`,
     });
 
     return true;

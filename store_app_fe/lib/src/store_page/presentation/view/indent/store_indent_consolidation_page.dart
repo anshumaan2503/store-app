@@ -116,50 +116,28 @@ class _StoreIndentConsolidationPageState
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Builder(
-                    builder: (context) {
-                      final isNarrow = MediaQuery.of(context).size.width < 420;
-                      if (isNarrow) {
-                        return Tooltip(
-                          message: 'Refresh',
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: _refresh,
-                            child: Container(
-                              height: 44,
-                              width: 44,
-                              decoration: BoxDecoration(
-                                color: _ink900,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.refresh_rounded,
-                                  size: 20, color: _surface),
-                            ),
-                          ),
-                        );
-                      }
-                      return FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _ink900,
-                          foregroundColor: _surface,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(
+                  Tooltip(
+                    message: 'Refresh',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: _refresh,
+                        child: Container(
+                          height: 44,
+                          width: 44,
+                          decoration: BoxDecoration(
+                            color: _ink900,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          elevation: 0,
-                        ),
-                        onPressed: _refresh,
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text(
-                          'Refresh',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                          child: const Icon(
+                            Icons.refresh_rounded,
+                            size: 20,
+                            color: _surface,
                           ),
                         ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -893,12 +871,19 @@ class _ConsolidatedIndentAccordionCardState
                               const Icon(Icons.corporate_fare_rounded,
                                   size: 14, color: _ink600),
                               const SizedBox(width: 4),
-                              Text(
-                                '${group.department} • ${group.requestedBy}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: _ink700,
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: isNarrow ? 200 : 300,
+                                ),
+                                child: Text(
+                                  '${group.department} • ${group.requestedBy}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _ink700,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1047,15 +1032,19 @@ class _ConsolidatedIndentAccordionCardState
                       const Icon(Icons.list_alt_rounded,
                           size: 16, color: _ink700),
                       const SizedBox(width: 6),
-                      Text(
-                        'Requisition Items (${group.items.length})',
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                          color: _ink900,
+                      Expanded(
+                        child: Text(
+                          'Requisition Items (${group.items.length})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: _ink900,
+                          ),
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       Text(
                         'Total Qty: ${group.totalRequestedQty}',
                         style: const TextStyle(

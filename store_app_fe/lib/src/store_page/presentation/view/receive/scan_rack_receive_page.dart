@@ -847,46 +847,84 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
               final rackItemsAv = ref.watch(
                 rackItemListStreamProvider(widget.rackId),
               );
-              final allItemsAv = ref.watch(itemAllPagedStreamProvider);
 
               final rackItems = rackItemsAv.value ?? <StoreItemsModel>[];
-              final allItems = allItemsAv.value ?? <StoreItemsModel>[];
 
-              if (rackItemsAv.isLoading &&
-                  allItemsAv.isLoading &&
-                  rackItems.isEmpty &&
-                  allItems.isEmpty) {
+              if (rackItemsAv.isLoading && rackItems.isEmpty) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final rackItemIds = rackItems.map((e) => e.id).toSet();
-              final seen = <String>{};
-              final combinedList = <StoreItemsModel>[];
-
-              // Items assigned to this rack first
-              for (final it in rackItems) {
-                if (seen.add(it.id)) combinedList.add(it);
-              }
-              // All other items in the store
-              for (final it in allItems) {
-                if (seen.add(it.id)) combinedList.add(it);
-              }
-
-              if (combinedList.isEmpty) {
-                return const Center(
-                  child: Text(
-                    "No items found in store",
-                    style: TextStyle(
-                      color: _ink900,
-                      fontWeight: FontWeight.w900,
+              if (rackItems.isEmpty) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _InfoRow(label: 'Rack Code', value: _rack.code),
+                    _InfoRow(label: 'Room', value: _rack.roomName),
+                    _InfoRow(label: 'Remark', value: _rack.remark),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 20,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _stroke),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x08000000),
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFEBEE),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.location_off_rounded,
+                              size: 32,
+                              color: Color(0xFFD32F2F),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'No Items Mapped to this Location',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _ink900,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Only items mapped to rack ${_rack.code} (${_rack.roomName}) can be received here. Please map items to this rack in Item Settings first.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _ink600,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 );
               }
 
               final filteredList = _itemSearchQuery.isEmpty
-                  ? combinedList
-                  : combinedList.where((it) {
+                  ? rackItems
+                  : rackItems.where((it) {
                       final q = _itemSearchQuery.toLowerCase();
                       return it.itemName.toLowerCase().contains(q) ||
                           it.itemCode.toLowerCase().contains(q);
@@ -896,11 +934,11 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
               if (_selectedItemId != null &&
                   !displayList.any((e) => e.id == _selectedItemId)) {
                 final sel =
-                    combinedList.where((e) => e.id == _selectedItemId).firstOrNull;
+                    rackItems.where((e) => e.id == _selectedItemId).firstOrNull;
                 if (sel != null) displayList.insert(0, sel);
               }
 
-              final selectedItem = _selectedItemFrom(combinedList);
+              final selectedItem = _selectedItemFrom(rackItems);
               final itemReady = selectedItem != null;
 
               if (selectedItem != null) {
@@ -924,7 +962,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                     cursorColor: _ink900,
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: 'Search items (e.g. Hack Saw, T-AA010)...',
+                      hintText: 'Search items mapped to this rack...',
                       hintStyle: const TextStyle(
                         color: _ink600,
                         fontSize: 12.5,
@@ -974,9 +1012,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                     itemHeight: 52,
                     selectedItemBuilder: (ctx) {
                       return displayList.map((it) {
-                        final isOnRack = rackItemIds.contains(it.id);
-                        final label =
-                            '${it.itemName} • ${it.itemCode}${isOnRack ? " (On Rack)" : ""}';
+                        final label = '${it.itemName} • ${it.itemCode}';
                         return Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
@@ -1044,9 +1080,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                     items: displayList.map((it) {
                       final isSel =
                           (_selectedItemId != null && _selectedItemId == it.id);
-                      final isOnRack = rackItemIds.contains(it.id);
-                      final label =
-                          '${it.itemName} • ${it.itemCode}${isOnRack ? "  [On Rack]" : ""}';
+                      final label = '${it.itemName} • ${it.itemCode}';
 
                       return DropdownMenuItem<String>(
                         value: it.id,
@@ -1079,7 +1113,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                       setState(() {
                         _selectedItemId = v;
                         final hit =
-                            combinedList.where((x) => x.id == v).toList();
+                            rackItems.where((x) => x.id == v).toList();
                         if (hit.isNotEmpty) _item = hit.first;
                       });
                     },

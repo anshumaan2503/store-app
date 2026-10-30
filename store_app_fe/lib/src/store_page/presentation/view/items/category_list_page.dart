@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../controllers/store_category_controller.dart';
 import '../../../domains/models/store_category_model.dart';
+import '../../widgets/store_ui_state_widgets.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -258,27 +259,11 @@ class _CategoryListPageState extends ConsumerState<CategoryListPage> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          _Card(
-                            padding: const EdgeInsets.all(10),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Showing ${rows.length} of ${paged.total}',
-                                    style: const TextStyle(
-                                      color: _ink700,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                if (canLoadMore)
-                                  FilledButton.icon(
-                                    onPressed: () => _loadMore(paged),
-                                    icon: const Icon(Icons.expand_more_rounded),
-                                    label: const Text('Load more'),
-                                  ),
-                              ],
-                            ),
+                          StorePaginationBar(
+                            currentCount: rows.length,
+                            totalCount: paged.total,
+                            canLoadMore: canLoadMore,
+                            onLoadMore: () => _loadMore(paged),
                           ),
                         ],
                       );
