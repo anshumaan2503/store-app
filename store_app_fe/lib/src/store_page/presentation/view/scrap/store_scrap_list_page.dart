@@ -257,7 +257,7 @@ class _StoreScrapListPageState extends ConsumerState<StoreScrapListPage> {
         ),
         data: (user) {
           return av.when(
-            loading: () => const LinearProgressIndicator(minHeight: 2),
+            loading: () => const StoreLoadingWidget(),
             error: (e, _) => StoreErrorView(
               error: e,
               onRetry: () => ref.invalidate(scrapPagedStreamProvider(_query)),

@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../auth/shared/providers/token_provider.dart';
+import '../../../../auth/shared/repositories/shared_preference_repository.dart';
 import '../../../../components/constants.dart';
 import '../../../../components/utils.dart';
 import '../../../controllers/store_items_controller.dart';
@@ -1720,15 +1722,15 @@ class _ItemThumb extends StatelessWidget {
   }
 }
 
-class _UpdateItemImageDialog extends StatefulWidget {
+class _UpdateItemImageDialog extends ConsumerStatefulWidget {
   const _UpdateItemImageDialog({required this.itemId});
   final String itemId;
 
   @override
-  State<_UpdateItemImageDialog> createState() => _UpdateItemImageDialogState();
+  ConsumerState<_UpdateItemImageDialog> createState() => _UpdateItemImageDialogState();
 }
 
-class _UpdateItemImageDialogState extends State<_UpdateItemImageDialog> {
+class _UpdateItemImageDialogState extends ConsumerState<_UpdateItemImageDialog> {
   final ImagePicker _picker = ImagePicker();
   XFile? _pickedImage;
   Uint8List? _pickedBytes;
@@ -1737,7 +1739,9 @@ class _UpdateItemImageDialogState extends State<_UpdateItemImageDialog> {
   Future<void> _pickFromGallery() async {
     final x = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 85,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (x == null) return;
     final bytes = await x.readAsBytes();
@@ -1751,7 +1755,9 @@ class _UpdateItemImageDialogState extends State<_UpdateItemImageDialog> {
   Future<void> _pickFromCamera() async {
     final x = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 85,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (x == null) return;
     final bytes = await x.readAsBytes();
@@ -1767,13 +1773,10 @@ class _UpdateItemImageDialogState extends State<_UpdateItemImageDialog> {
 
     final bytes = _pickedBytes ?? await _pickedImage!.readAsBytes();
 
-    String mime = 'image/png';
+    String mime = 'image/jpeg';
     final lower = _pickedImage!.name.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-      mime = 'image/jpeg';
-    } else if (lower.endsWith('.webp')) {
-      mime = 'image/webp';
-    }
+    if (lower.endsWith('.png')) mime = 'image/png';
+    if (lower.endsWith('.webp')) mime = 'image/webp';
 
     final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
 
@@ -1781,9 +1784,17 @@ class _UpdateItemImageDialogState extends State<_UpdateItemImageDialog> {
       '${Constants.socketUrl}/api/store/storeitems/${widget.itemId}/image/base64',
     );
 
+    String token = ref.read(authTokenProvider);
+    if (token.isEmpty) {
+      token = await ref.read(spRepositoryProvider).getStringValue('authToken');
+    }
+
     final res = await http.post(
       uri,
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+      },
       body: jsonEncode({'base64': dataUrl}),
     );
 

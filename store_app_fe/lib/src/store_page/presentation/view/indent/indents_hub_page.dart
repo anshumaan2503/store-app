@@ -115,9 +115,12 @@ class _IndentsHubPageState extends ConsumerState<IndentsHubPage> {
           shortLabel: 'Cart',
           icon: Icons.post_add_rounded,
           badgeCount: draftCount,
-          builder: () => const IndentDraftsPage(
-            key: ValueKey('indent_drafts_page'),
+          builder: () => IndentDraftsPage(
+            key: const ValueKey('indent_drafts_page'),
             isEmbedded: true,
+            onSubmitSuccess: () {
+              _onTabSelected(canHistory ? 2 : (canConsolidation ? 0 : 1));
+            },
           ),
         ),
       );

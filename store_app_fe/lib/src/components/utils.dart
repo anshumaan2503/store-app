@@ -2,68 +2,77 @@ import 'package:flutter/material.dart';
 
 import '../../../main.dart';
 
-void showSnackBar(String text) {
-  final BuildContext context = globalNavigatorKey.currentContext!;
-  final double screenHeight = MediaQuery.of(context).size.height;
+const _snackInk900 = Color(0xFF282321);
 
-  // Set bottom margin as a percentage of screen height (e.g., 5% of screen height)
-  final double bottomMargin = screenHeight * 0.085;
+void showSnackBar(
+  String text, {
+  bool isError = false,
+  Duration duration = const Duration(seconds: 4),
+}) {
+  final BuildContext? context = globalNavigatorKey.currentContext;
+  if (context == null) return;
+
+  final screenWidth = MediaQuery.of(context).size.width;
+  final screenHeight = MediaQuery.of(context).size.height;
+  final double bottomMargin = screenHeight * 0.04;
+
+  final isWide = screenWidth > 500;
+  final hMargin = isWide ? (screenWidth - 440) / 2 : 16.0;
 
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        backgroundColor: Colors.transparent, // Set transparent background
-        elevation: 0, // No elevation
-        behavior:
-            SnackBarBehavior.floating, // Floating behavior allows positioning
+        duration: duration,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
         margin: EdgeInsets.only(
           bottom: bottomMargin,
-        ), // Bottom margin as percentage of screen height
-        padding: const EdgeInsets.all(0), // No padding around the container
-        content: Builder(
-          builder: (context) {
-            // Measure text size to set snackBar width
-            TextSpan textSpan = TextSpan(
-              text: text,
-              style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                color: Theme.of(context).colorScheme.onPrimary,
+          left: hMargin,
+          right: hMargin,
+        ),
+        padding: EdgeInsets.zero,
+        content: Container(
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isError ? const Color(0xFFC62828) : _snackInk900,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 10,
+                offset: Offset(0, 4),
               ),
-            );
-            TextPainter textPainter = TextPainter(
-              text: textSpan,
-              maxLines: 1,
-              textDirection: TextDirection.ltr,
-            )..layout(
-              minWidth: 0,
-              maxWidth: MediaQuery.of(context).size.width * 0.9,
-            );
-
-            // Set width based on text length, with padding for neatness
-            double snackBarWidth =
-                textPainter.width + 40; // Add some padding around the text
-
-            return Align(
-              alignment: Alignment.bottomCenter, // Align SnackBar at the bottom
-              child: Container(
-                width: snackBarWidth, // Dynamically adjust width
-                height: screenHeight * 0.04, // Fixed height
-                decoration: BoxDecoration(
-                  color:
-                      Theme.of(context).colorScheme.primary, // Background color
-                  borderRadius: BorderRadius.circular(20), // Rounded corners
-                ),
-                alignment: Alignment.center,
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isError
+                    ? Icons.error_outline_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
                   text,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );

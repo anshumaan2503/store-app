@@ -140,6 +140,7 @@ export class StoreGrnService {
 
     if (this.cartGateway?.server) {
       this.cartGateway.server.emit('store:grn:created', grnDoc);
+      this.cartGateway.server.emit('store:refillRequests:updated', { timestamp: Date.now() });
       if (isAutoApproved) {
         this.cartGateway.server.emit('store:grn:approved', grnDoc);
       }
@@ -240,6 +241,7 @@ export class StoreGrnService {
 
     if (this.cartGateway?.server) {
       this.cartGateway.server.emit('store:grn:approved', grn);
+      this.cartGateway.server.emit('store:refillRequests:updated', { timestamp: Date.now() });
     }
 
     return grn;

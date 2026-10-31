@@ -247,18 +247,16 @@ export class StoreNewItemService {
     entity.imageUrl = imageUrl;
     await entity.save();
     if (identity === 'item') {
-      var scrapentity = await this.model.findById(id);
-      if (!scrapentity) throw new NotFoundException('StoreItem not found');
-
-      var scrapChange = await this.model.findOne({
-        // itemNameId: scrapentity!.itemNameId,
-        categoryId: scrapentity!.categoryId,
-        isScrap: true,
-      });
-
-      if (!scrapChange) throw new NotFoundException('StoreItem not found');
-      scrapChange.imageUrl = imageUrl;
-      await scrapChange.save();
+      try {
+        const scrapChange = await this.model.findOne({
+          categoryId: entity.categoryId,
+          isScrap: true,
+        });
+        if (scrapChange) {
+          scrapChange.imageUrl = imageUrl;
+          await scrapChange.save();
+        }
+      } catch (_) {}
     }
 
     if (identity === 'receive') {
@@ -2004,33 +2002,69 @@ export class StoreNewItemService {
   }
 
   async getItemByRack(rackId: string) {
-    if (!rackId) return null;
+    if (!rackId || !Types.ObjectId.isValid(rackId)) return null;
 
     const rack: any = await this.rackModel.findById(this.oid(rackId)).lean();
-    let itemId = '';
+    const candidateItemIds: string[] = [];
 
     if (rack?.itemId) {
       if (Array.isArray(rack.itemId) && rack.itemId.length > 0) {
         const flat = rack.itemId.flat(Infinity);
-        itemId = String(
-          flat.find((x: any) => x && Types.ObjectId.isValid(String(x))) || '',
-        ).trim();
+        for (const x of flat) {
+          const s = String(x ?? '').trim();
+          if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
+        }
       } else {
-        itemId = String(rack.itemId).trim();
+        const s = String(rack.itemId).trim();
+        if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
       }
     }
 
-    if (!itemId || !Types.ObjectId.isValid(itemId)) {
-      const irq: any = await this.itemRackQtyModel
-        .findOne({ rackId: String(rackId) })
-        .lean();
-      if (irq && irq.itemId) itemId = String(irq.itemId).trim();
+    const irqs: any[] = await this.itemRackQtyModel
+      .find({
+        $or: [
+          { rackId: String(rackId) },
+          { rackId: rack?._id?.toString() || rackId },
+        ],
+      })
+      .sort({ stockAvailableQuantity: -1 })
+      .lean();
+
+    for (const irq of irqs) {
+      const s = String(irq?.itemId ?? '').trim();
+      if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
     }
 
-    if (!itemId || !Types.ObjectId.isValid(itemId)) return null;
+    const uniqueCandidateIds = Array.from(new Set(candidateItemIds));
+    if (uniqueCandidateIds.length === 0) {
+      const directItems = await this.model
+        .find({
+          $or: [
+            { rackId: String(rackId) },
+            { rackId: rack?._id?.toString() || rackId },
+          ],
+        })
+        .select({ _id: 1 })
+        .lean();
+      for (const d of directItems) {
+        uniqueCandidateIds.push(String(d._id));
+      }
+    }
 
-    const item = await this.model.findById(this.oid(itemId)).lean();
-    return item || null;
+    if (uniqueCandidateIds.length === 0) return null;
+
+    const items = await this.model
+      .find({
+        _id: { $in: uniqueCandidateIds.map((id) => new Types.ObjectId(id)) },
+      })
+      .lean();
+
+    if (!items || items.length === 0) return null;
+
+    const itemWithStock = items.find(
+      (it: any) => Number(it.stockAvailableQuantity ?? 0) > 0,
+    );
+    return itemWithStock || items[0];
   }
 
   async getItemNameRacks(itemNameId: string) {
@@ -2200,28 +2234,46 @@ export class StoreNewItemService {
   }
 
   async rackItemList(rackId: string) {
-    if (!rackId) return [];
-    const itemsCheck = await this.rackModel.findById(rackId).lean();
-    if (!itemsCheck) {
-      return [];
+    if (!rackId || !Types.ObjectId.isValid(rackId)) return [];
+    const itemsCheck: any = await this.rackModel.findById(this.oid(rackId)).lean();
+
+    const rackOid = itemsCheck?._id ? itemsCheck._id.toString() : String(rackId);
+    const itemIds: string[] = [];
+
+    if (itemsCheck?.itemId) {
+      const arr = Array.isArray(itemsCheck.itemId)
+        ? itemsCheck.itemId.flat(Infinity)
+        : [itemsCheck.itemId];
+      for (const id of arr) {
+        const s = String(id ?? '').trim();
+        if (s && Types.ObjectId.isValid(s)) itemIds.push(s);
+      }
     }
 
-    const rackOid = itemsCheck._id.toString();
-    const itemIds = Array.isArray(itemsCheck.itemId)
-      ? itemsCheck.itemId.filter((id) => Boolean(id) && Types.ObjectId.isValid(id))
-      : [];
-
-    return await this.model
+    const irqs: any[] = await this.itemRackQtyModel
       .find({
-        $or: [
-          { rackId: rackOid },
-          { rackId: { $in: [rackOid] } },
-          ...(itemIds.length > 0
-            ? [{ _id: { $in: itemIds.map((id) => new Types.ObjectId(id)) } }]
-            : []),
-        ],
+        $or: [{ rackId: String(rackId) }, { rackId: rackOid }],
       })
       .lean();
+    for (const irq of irqs) {
+      const s = String(irq?.itemId ?? '').trim();
+      if (s && Types.ObjectId.isValid(s)) itemIds.push(s);
+    }
+
+    const uniqueItemIds = Array.from(new Set(itemIds));
+
+    const orClauses: any[] = [
+      { rackId: rackOid },
+      { rackId: String(rackId) },
+      { rackId: { $in: [rackOid, String(rackId)] } },
+    ];
+    if (uniqueItemIds.length > 0) {
+      orClauses.push({
+        _id: { $in: uniqueItemIds.map((id) => new Types.ObjectId(id)) },
+      });
+    }
+
+    return await this.model.find({ $or: orClauses }).lean();
   }
 
   async getItemTransactions(itemId: string) {

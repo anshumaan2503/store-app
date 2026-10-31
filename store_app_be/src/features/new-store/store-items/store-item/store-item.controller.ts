@@ -100,6 +100,7 @@ export class StoreNewItemController {
     this.gateway.broadcastAllList().catch(() => {});
     this.gateway.broadcastAllScrapList().catch(() => {});
     this.gateway.broadcastAllReceiveList().catch(() => {});
+    this.gateway.broadcastRefillRequestsUpdated();
     return data;
   }
 
@@ -131,7 +132,7 @@ export class StoreNewItemController {
   }
 
   @Post(':id/image/base64')
-  @Permissions('storeitemedit')
+  @Permissions('storeitemedit', 'storeitemadd')
   async uploadImage(@Param('id') id: string, @Body() dto: UploadBase64Dto) {
     const { imageUrl, entity } = await this.s.uploadImageBase64(
       'item',

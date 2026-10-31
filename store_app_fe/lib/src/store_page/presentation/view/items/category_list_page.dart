@@ -114,8 +114,7 @@ class _CategoryListPageState extends ConsumerState<CategoryListPage> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: av.when(
-                    loading:
-                        () => const Center(child: CircularProgressIndicator()),
+                    loading: () => const StoreLoadingWidget(),
                     error: (e, _) => Center(child: Text('Error: $e')),
                     data: (paged) {
                       final rows = paged.rows;

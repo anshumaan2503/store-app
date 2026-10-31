@@ -4,10 +4,16 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../issue_scan_by_rack_page.dart';
 import '../issue_scan_page.dart';
 import '../issue_scan_return_page.dart';
+import '../issue_scan_create_page.dart';
 
 class QRCodeScannerIssuePage extends StatefulWidget {
   final bool isReturn;
-  const QRCodeScannerIssuePage({super.key, this.isReturn = false});
+  final bool isDirectCreateRequest;
+  const QRCodeScannerIssuePage({
+    super.key,
+    this.isReturn = false,
+    this.isDirectCreateRequest = false,
+  });
 
   @override
   State<QRCodeScannerIssuePage> createState() => _QRCodeScannerIssuePageState();
@@ -18,9 +24,6 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
   final double scanArea = 300;
 
   bool _isHandlingCode = false;
-
-  // ✅ system back blocked by default; allow only when app back is pressed
-  bool _allowPopOnce = false;
 
   @override
   void initState() {
@@ -46,23 +49,6 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
     super.dispose();
   }
 
-  Future<void> _appBack() async {
-    // Temporarily allow pop, then pop, then lock again if not popped.
-    if (!mounted) return;
-
-    setState(() => _allowPopOnce = true);
-
-    final didPop = await Navigator.of(context).maybePop();
-
-    if (!mounted) return;
-
-    // If it didn't pop (root route), re-lock back.
-    if (!didPop) {
-      setState(() => _allowPopOnce = false);
-    }
-    // If it did pop, widget will dispose anyway.
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -74,9 +60,9 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text(
-            "Scan for Issue Request",
-            style: TextStyle(fontWeight: FontWeight.bold),
+          title: Text(
+            widget.isDirectCreateRequest ? "Scan for Request" : "Scan for Issue Request",
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
 
@@ -94,7 +80,6 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
               case TorchState.off:
               case TorchState.auto:
               case TorchState.unavailable:
-              default:
                 icon = Icons.flash_on_outlined;
             }
 
@@ -109,11 +94,11 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
         body: SafeArea(
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  "Scan QR for Issue Request",
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  widget.isDirectCreateRequest ? "Scan QR for Request" : "Scan QR for Issue Request",
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
               ),
               Expanded(
@@ -196,44 +181,33 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
     switch (qrCodeId) {
       case "P0040":
         {
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(
-              builder: (context) => widget.isReturn
-                  ? IssueByItemReturnActionsPage(itemId: databaseId)
-                  : IssueByItemActionsPage(itemId: databaseId),
-            ),
-          );
+          final Widget targetPage;
+          if (widget.isReturn) {
+            targetPage = IssueByItemReturnActionsPage(itemId: databaseId);
+          } else if (widget.isDirectCreateRequest) {
+            targetPage = ItemPage(initialItemId: databaseId);
+          } else {
+            targetPage = IssueByItemActionsPage(itemId: databaseId);
+          }
 
           if (!mounted) return;
-
-          if (result == true) {
-            // Use app navigation (not system)
-            Navigator.pop(context, true);
-          } else {
-            _isHandlingCode = false;
-            await _controller.start();
-          }
+          await Navigator.pushReplacement<bool, void>(
+            context,
+            MaterialPageRoute(
+              builder: (context) => targetPage,
+            ),
+          );
           break;
         }
       case "P0041":
         {
-          final result = await Navigator.push<bool>(
+          if (!mounted) return;
+          await Navigator.pushReplacement<bool, void>(
             context,
             MaterialPageRoute(
               builder: (context) => IssueByRackActionsPage(rackId: databaseId),
             ),
           );
-
-          if (!mounted) return;
-
-          if (result == true) {
-            // Use app navigation (not system)
-            Navigator.pop(context, true);
-          } else {
-            _isHandlingCode = false;
-            await _controller.start();
-          }
           break;
         }
 

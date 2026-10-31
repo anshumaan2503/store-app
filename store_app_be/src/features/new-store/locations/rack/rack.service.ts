@@ -102,36 +102,57 @@ export class RacksService {
   /* -------------------- WS READS -------------------- */
 
   async findRealAllRackPaged() {
-    // const page = Math.max(1, Number(q.page || 1));
-    // const limit = Math.min(200, Math.max(1, Number(q.limit || 12)));
-    // const skip = (page - 1) * limit;
-    var rowsQtyData: any = [];
-    var rows = await this.model.find().lean();
-    for (var data of rows) {
-      var rowsQyt = await this.ItemRackQtyModel.findOne({
-        itemId: data.itemId,
-        rackId: data._id,
-      }).lean();
+    const rows = await this.model.find().lean();
+    const allStockRows = await this.ItemRackQtyModel.find().lean();
 
-      rowsQtyData.push({
+    // Map and aggregate quantities per rackId in O(N) memory lookup
+    const stockMap = new Map<
+      string,
+      {
+        totalStockQuantity: number;
+        stockAvailableQuantity: number;
+        stockIssueQuantity: number;
+        stockscrapQuantity: number;
+      }
+    >();
+
+    for (const stock of allStockRows) {
+      const rId = String(stock.rackId || '');
+      if (!rId) continue;
+      const current = stockMap.get(rId) || {
+        totalStockQuantity: 0,
+        stockAvailableQuantity: 0,
+        stockIssueQuantity: 0,
+        stockscrapQuantity: 0,
+      };
+      current.totalStockQuantity += Number(stock.totalStockQuantity || 0);
+      current.stockAvailableQuantity += Number(stock.stockAvailableQuantity || 0);
+      current.stockIssueQuantity += Number(stock.stockIssueQuantity || 0);
+      current.stockscrapQuantity += Number(stock.stockscrapQuantity || 0);
+      stockMap.set(rId, current);
+    }
+
+    const rowsQtyData = rows.map((data) => {
+      const rId = String(data._id);
+      const stock = stockMap.get(rId);
+
+      return {
         _id: data._id,
         code: data.code,
         rackName: data.rackName ?? '',
         remark: data.remark,
         roomId: data.roomId,
         itemId: data.itemId,
-        // itemName: data.itemName == '' ? 'Not Assign' : data.itemName,
         isScrap: data.isScrap,
         roomName: data.roomName,
         createdBy: data.createdBy,
-        totalStockQuantity: rowsQyt?.totalStockQuantity ?? 0,
-        stockAvailableQuantity: rowsQyt?.stockAvailableQuantity ?? 0,
-        stockIssueQuantity: rowsQyt?.stockIssueQuantity ?? 0,
-        stockscrapQuantity: rowsQyt?.stockscrapQuantity ?? 0,
-      });
-    }
+        totalStockQuantity: stock?.totalStockQuantity ?? 0,
+        stockAvailableQuantity: stock?.stockAvailableQuantity ?? 0,
+        stockIssueQuantity: stock?.stockIssueQuantity ?? 0,
+        stockscrapQuantity: stock?.stockscrapQuantity ?? 0,
+      };
+    });
 
-    // console.log(rowsQtyData);
     return rowsQtyData;
   }
 

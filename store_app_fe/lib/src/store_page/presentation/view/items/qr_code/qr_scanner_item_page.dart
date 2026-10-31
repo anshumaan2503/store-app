@@ -202,22 +202,13 @@ class _QRCodeScannerItemPageState extends State<QRCodeScannerItemPage> {
     switch (qrCodeId) {
       case "P0040":
         {
-          final result = await Navigator.push<bool>(
+          if (!mounted) return;
+          await Navigator.pushReplacement<bool, void>(
             context,
             MaterialPageRoute(
               builder: (context) => ItemScanPage(initialItemId: databaseId),
             ),
           );
-
-          if (!mounted) return;
-
-          if (result == true) {
-            // Use app navigation (not system)
-            Navigator.pop(context, true);
-          } else {
-            _isHandlingCode = false;
-            await _controller.start();
-          }
           break;
         }
 

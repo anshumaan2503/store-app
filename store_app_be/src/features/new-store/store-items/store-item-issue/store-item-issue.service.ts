@@ -296,16 +296,50 @@ export class IssueService {
     return Math.max(min, Math.min(max, n));
   }
 
-  private computeCloseStatus(issue: any) {
+  computeCloseStatus(issue: any): 'CLOSED' | 'APPROVED' {
     const lines = issue.lines || [];
+    if (!lines.length) return 'APPROVED';
     const anyApproved = lines.some((l: any) => this.n(l.approvedQty, 0) > 0);
     const allIssuedAgainstApproved = lines.every((l: any) => {
       const ap = this.n(l.approvedQty, 0);
       const isd = this.n(l.issuedQty, 0);
-      return isd >= ap;
+      const rej = this.n(l.issuedRejectQty, 0);
+      return (isd + rej) >= ap;
     });
     if (anyApproved && allIssuedAgainstApproved) return 'CLOSED';
     return 'APPROVED';
+  }
+
+  async syncExistingIssueStatuses() {
+    try {
+      const activeIssues = await this.issueModel.find({
+        status: { $nin: ['REJECTED', 'EXPIRED', 'CANCELLED'] },
+      });
+      for (const issue of activeIssues) {
+        const closeStatus = this.computeCloseStatus(issue);
+        let changed = false;
+        if (closeStatus === 'CLOSED' && issue.status !== 'CLOSED') {
+          issue.status = 'CLOSED';
+          if (!(issue as any).closedAt) {
+            (issue as any).closedAt = (issue as any).updatedAt || new Date();
+          }
+          changed = true;
+        } else if (closeStatus === 'APPROVED' && (issue as any).closedAt) {
+          (issue as any).closedAt = null;
+          if (issue.status === 'CLOSED') {
+            issue.status = 'APPROVED';
+          }
+          changed = true;
+        }
+        if (changed) {
+          issue.markModified('status');
+          issue.markModified('closedAt');
+          await issue.save();
+        }
+      }
+    } catch (err) {
+      console.warn('[IssueService] syncExistingIssueStatuses warning:', err);
+    }
   }
 
   /* -------------------------------------------------------
@@ -1744,8 +1778,15 @@ export class IssueService {
         } as any);
       }
 
-      if (!(issue as any).closedAt) {
-        (issue as any).closedAt = new Date();
+      const closeStatus = this.computeCloseStatus(issue);
+      if (closeStatus === 'CLOSED') {
+        issue.status = 'CLOSED';
+        if (!(issue as any).closedAt) {
+          (issue as any).closedAt = new Date();
+        }
+      } else {
+        issue.status = 'APPROVED';
+        (issue as any).closedAt = null;
       }
 
       issue.markModified('lines');
@@ -2119,8 +2160,15 @@ export class IssueService {
         updatedLines.push({ itemId, issuedQty: (line as any).issuedQty });
       }
 
-      if (!(issue as any).closedAt) {
-        (issue as any).closedAt = new Date();
+      const closeStatus = this.computeCloseStatus(issue);
+      if (closeStatus === 'CLOSED') {
+        issue.status = 'CLOSED';
+        if (!(issue as any).closedAt) {
+          (issue as any).closedAt = new Date();
+        }
+      } else {
+        issue.status = 'APPROVED';
+        (issue as any).closedAt = null;
       }
 
       issue.markModified('lines');
@@ -2855,12 +2903,15 @@ export class IssueService {
     line.issuedQty = Number(line.issuedQty || 0) + issuedTotal;
     issue.allocations = [...(issue.allocations || []), ...allocations];
 
-    // issue.status = this.computeCloseStatus(issue);
-    if (
-      // String(issue.status).toUpperCase() === 'CLOSED' &&
-      !(issue as any).closedAt
-    ) {
-      (issue as any).closedAt = new Date();
+    const closeStatus = this.computeCloseStatus(issue);
+    if (closeStatus === 'CLOSED') {
+      issue.status = 'CLOSED';
+      if (!(issue as any).closedAt) {
+        (issue as any).closedAt = new Date();
+      }
+    } else {
+      issue.status = 'APPROVED';
+      (issue as any).closedAt = null;
     }
 
     issue.markModified('lines');
@@ -3105,6 +3156,99 @@ export class IssueService {
         return { ...issue, lines: filteredLines };
       })
       // ✅ Remove issues that have no remaining lines
+      .filter((issue) => issue.lines.length > 0);
+
+    return filteredIssues;
+  }
+
+  async findIssuesByRackId(dto: any) {
+    const rackId = String(dto?.rackId ?? dto?.id ?? '').trim();
+    if (!rackId || !Types.ObjectId.isValid(rackId)) return [];
+
+    const search = String(dto?.search ?? '').trim();
+    const createdBy = String(dto?.createdBy ?? '').trim();
+
+    const rackOid = new Types.ObjectId(rackId);
+    const rackDoc: any = await this.rackModel.findById(rackOid).lean();
+
+    const candidateItemIds: string[] = [];
+    if (rackDoc?.itemId) {
+      const items = Array.isArray(rackDoc.itemId)
+        ? rackDoc.itemId.flat(Infinity)
+        : [rackDoc.itemId];
+      for (const it of items) {
+        const s = String(it ?? '').trim();
+        if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
+      }
+    }
+
+    const irqs: any[] = await this.itemRackQtyModel
+      .find({
+        $or: [{ rackId: rackId }, { rackId: rackOid.toString() }],
+      })
+      .lean();
+    for (const irq of irqs) {
+      const s = String(irq?.itemId ?? '').trim();
+      if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
+    }
+
+    const storeItems: any[] = await this.itemModel
+      .find({
+        $or: [
+          { rackId: rackId },
+          { rackId: rackOid.toString() },
+          { rackId: { $in: [rackId, rackOid.toString()] } },
+        ],
+      })
+      .select({ _id: 1 })
+      .lean();
+    for (const sit of storeItems) {
+      const s = String(sit?._id ?? '').trim();
+      if (s && Types.ObjectId.isValid(s)) candidateItemIds.push(s);
+    }
+
+    const uniqueItemIds = Array.from(new Set(candidateItemIds));
+    if (uniqueItemIds.length === 0) return [];
+
+    const lineIdOr: any[] = [];
+    for (const id of uniqueItemIds) {
+      lineIdOr.push({ 'lines.itemId': id });
+      lineIdOr.push({ 'lines.itemId.$oid': id });
+      lineIdOr.push({ 'lines.itemId': new Types.ObjectId(id) });
+    }
+
+    const filter: any = { $or: lineIdOr };
+    if (createdBy) filter.createdBy = createdBy;
+    if (search) filter.issNo = new RegExp(this.escapeRegex(search), 'i');
+
+    const issues = await this.issueModel.find(filter).lean();
+    const itemIdSet = new Set(uniqueItemIds);
+
+    const filteredIssues = issues
+      .map((issue) => {
+        const filteredLines = (issue.lines ?? []).filter((line) => {
+          const lineItemId =
+            line.itemId?.toString?.() ?? String(line.itemId ?? '');
+          if (!itemIdSet.has(lineItemId)) return false;
+
+          const requestedQty = Number(line.requestedQty ?? 0);
+          const approvedQty = Number(line.approvedQty ?? 0);
+          const issuedQty = Number(line.issuedQty ?? 0);
+          const returnQty = Number(line.returnQty ?? 0);
+          const scrapQty = Number(line.scrapQty ?? 0);
+          const approvedRejectQty = Number(line.approvedRejectQty ?? 0);
+          const issuedRejectQty = Number(line.issuedRejectQty ?? 0);
+
+          const isCompleted =
+            requestedQty === approvedQty + approvedRejectQty &&
+            approvedQty === issuedQty + issuedRejectQty &&
+            issuedQty === returnQty + scrapQty;
+
+          return !isCompleted;
+        });
+
+        return { ...issue, lines: filteredLines };
+      })
       .filter((issue) => issue.lines.length > 0);
 
     return filteredIssues;
@@ -3493,15 +3637,10 @@ export class IssueService {
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (tab === 'ready') {
-      filter.status = { $nin: ['CLOSED', 'REJECTED', 'EXPIRED'] };
+      filter.status = { $nin: ['CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] };
       filter.closedAt = null;
     } else if (tab === 'history') {
-      filter.$or = [
-        { status: { $in: ['CLOSED', 'REJECTED', 'EXPIRED'] } },
-        { closedAt: { $ne: null } },
-        { 'allocations.0': { $exists: true } },
-        { 'lines.issuedQty': { $gt: 0 } },
-      ];
+      filter.status = { $in: ['CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] };
     }
 
     if (createdByRaw) {

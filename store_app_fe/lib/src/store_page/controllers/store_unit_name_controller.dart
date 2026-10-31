@@ -39,11 +39,14 @@ class UnitNamePagedQuery {
 }
 
 final unitNamePagedStreamProvider = StreamProvider.autoDispose
-    .family<UnitNamePagedResult, UnitNamePagedQuery>((ref, q) async* {
+    .family<UnitNamePagedResult, UnitNamePagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
-      final ctrl = StreamController<UnitNamePagedResult>(sync: true);
+      final ctrl = StreamController<UnitNamePagedResult>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -52,14 +55,16 @@ final unitNamePagedStreamProvider = StreamProvider.autoDispose
                       (e) => StoreUnitName.fromMap(e as Map<String, dynamic>),
                     )
                     .toList();
-            ctrl.add(
-              UnitNamePagedResult(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? q.page) as int,
-                limit: (data['limit'] ?? q.limit) as int,
-              ),
-            );
+            if (!ctrl.isClosed) {
+              ctrl.add(
+                UnitNamePagedResult(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? q.page) as int,
+                  limit: (data['limit'] ?? q.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -67,20 +72,27 @@ final unitNamePagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllUnitNamePaged', handler);
       socket.emit('store:findAllUnitNamePaged', q.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            UnitNamePagedResult(
+              rows: const [],
+              total: 0,
+              page: q.page,
+              limit: q.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllUnitNamePaged', handler);
         ctrl.close();
       });
 
-      yield UnitNamePagedResult(
-        rows: const [],
-        total: 0,
-        page: q.page,
-        limit: q.limit,
-      );
-      await for (final v in ctrl.stream) {
-        yield v;
-      }
+      return ctrl.stream;
     });
 
 final storeUnitNameControllerProvider = Provider(

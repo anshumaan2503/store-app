@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../auth/controllers/users_controller.dart';
-import '../../../../components/motion_widgets.dart';
 import '../../../controllers/store_cart_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../../widgets/store_ui_state_widgets.dart';
@@ -266,6 +265,8 @@ class ItemListCard extends StatelessWidget {
                       ),
                       child: Image.network(
                         item.imageUrl.toString().trim(),
+                        cacheWidth: 140,
+                        cacheHeight: 140,
                         fit: BoxFit.cover,
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
@@ -452,7 +453,7 @@ class ItemListCard extends StatelessWidget {
                     ),
                     if (stockBell != null) stockBell,
 
-                    // 1. Available Badge (Deducts active in-cart units in real time)
+                    // 1 & 2: Available & In Cart Badges (Combined real-time listener)
                     Consumer(
                       builder: (context, ref, _) {
                         final globalInCart = ref.watch(globalInCartProvider);
@@ -461,115 +462,110 @@ class ItemListCard extends StatelessWidget {
                         final inCartQty = globalQty > 0 ? globalQty : myCartQty;
                         final effectiveAvailable = (item.stockAvailableQuantity - inCartQty).clamp(0, 999999);
                         final isOutEffective = effectiveAvailable <= 0;
-
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isOutEffective
-                                ? const Color(0xFFFFEBEE)
-                                : const Color(0xE8E8F5E9),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isOutEffective
-                                    ? Icons.cancel_outlined
-                                    : Icons.check_circle_outline,
-                                size: 11,
-                                color: isOutEffective
-                                    ? const Color(0xFFC62828)
-                                    : const Color(0xFF2E7D32),
-                              ),
-                              const SizedBox(width: 3.5),
-                              Text(
-                                'Available: $effectiveAvailable',
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: isOutEffective
-                                      ? const Color(0xFFC62828)
-                                      : const Color(0xFF2E7D32),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-
-                    // 2. In Cart Badge (Global in-cart count across all departments/accounts)
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final globalInCart = ref.watch(globalInCartProvider);
-                        final globalQty = globalInCart[item.id] ?? 0;
-                        final myCartQty = ref.watch(storeCartProvider).findById(item.id)?.quantity ?? 0;
-                        final inCartQty = globalQty > 0 ? globalQty : myCartQty;
                         final hasInCart = inCartQty > 0;
 
-                        return Tooltip(
-                          message: hasInCart
-                              ? '$inCartQty unit(s) in cart across departments • Click to view who & which dept'
-                              : 'No units currently in any cart • Click to view details',
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(6),
-                              onTap: () {
-                                showItemActivityBreakdownSheet(
-                                  context,
-                                  item: item,
-                                  initialTab: ItemBreakdownTab.inCart,
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: hasInCart
-                                      ? const Color(0xFFE3F2FD)
-                                      : _surfaceAlt.withValues(alpha: 0.6),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: hasInCart
-                                        ? const Color(0xFF90CAF9)
-                                        : _stroke,
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isOutEffective
+                                    ? const Color(0xFFFFEBEE)
+                                    : const Color(0xE8E8F5E9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isOutEffective
+                                        ? Icons.cancel_outlined
+                                        : Icons.check_circle_outline,
+                                    size: 11,
+                                    color: isOutEffective
+                                        ? const Color(0xFFC62828)
+                                        : const Color(0xFF2E7D32),
                                   ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.shopping_cart_outlined,
-                                      size: 11,
-                                      color: hasInCart
-                                          ? const Color(0xFF1565C0)
-                                          : _ink700,
+                                  const SizedBox(width: 3.5),
+                                  Text(
+                                    'Available: $effectiveAvailable',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: isOutEffective
+                                          ? const Color(0xFFC62828)
+                                          : const Color(0xFF2E7D32),
                                     ),
-                                    const SizedBox(width: 3.5),
-                                    Text(
-                                      'In Cart: $inCartQty',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: hasInCart
-                                            ? FontWeight.w800
-                                            : FontWeight.w700,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Tooltip(
+                              message: hasInCart
+                                  ? '$inCartQty unit(s) in cart across departments • Click to view who & which dept'
+                                  : 'No units currently in any cart • Click to view details',
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () {
+                                    showItemActivityBreakdownSheet(
+                                      context,
+                                      item: item,
+                                      initialTab: ItemBreakdownTab.inCart,
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: hasInCart
+                                          ? const Color(0xFFE3F2FD)
+                                          : _surfaceAlt.withValues(alpha: 0.6),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
                                         color: hasInCart
-                                            ? const Color(0xFF1565C0)
-                                            : _ink700,
+                                            ? const Color(0xFF90CAF9)
+                                            : _stroke,
                                       ),
                                     ),
-                                  ],
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.shopping_cart_outlined,
+                                          size: 11,
+                                          color: hasInCart
+                                              ? const Color(0xFF1565C0)
+                                              : _ink700,
+                                        ),
+                                        const SizedBox(width: 3.5),
+                                        Text(
+                                          'In Cart: $inCartQty',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: hasInCart
+                                                ? FontWeight.w800
+                                                : FontWeight.w700,
+                                            color: hasInCart
+                                                ? const Color(0xFF1565C0)
+                                                : _ink700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         );
                       },
                     ),
@@ -810,14 +806,6 @@ class ItemListCard extends StatelessWidget {
 ),
 ),
 );
-
-    if (index < 12) {
-      return StaggeredFadeIn(
-        index: index,
-        offsetMs: 35,
-        child: RepaintBoundary(child: cardContent),
-      );
-    }
 
     return RepaintBoundary(child: cardContent);
   }

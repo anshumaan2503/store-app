@@ -19,6 +19,7 @@ import 'lists/racks_scrap_qty_item_list_page.dart';
 import 'lists/rakes_scrap_qty_machine_list_page.dart';
 import 'widgets/racks_shared_widgets.dart';
 import 'widgets/racks_theme.dart';
+import '../../widgets/store_ui_state_widgets.dart';
 import '../../../controllers/guided_tour_controller.dart';
 
 class RacksListPage extends ConsumerStatefulWidget {
@@ -208,12 +209,24 @@ class _RacksListPageState extends ConsumerState<RacksListPage> {
     final userAv = ref.watch(userFindOneDataStreamProvider);
 
     return userAv.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('User load error: $e'),
+      loading: () => const Scaffold(
+        backgroundColor: surface,
+        body: Center(child: StoreLoadingWidget()),
+      ),
+      error: (e, _) => Scaffold(
+        backgroundColor: surface,
+        body: Center(child: Text('User load error: $e')),
+      ),
       data: (user) {
         return racksAllAv.when(
-          loading: () => const LinearProgressIndicator(minHeight: 2),
-          error: (e, _) => Text('Racks load error: $e'),
+          loading: () => const Scaffold(
+            backgroundColor: surface,
+            body: Center(child: StoreLoadingWidget()),
+          ),
+          error: (e, _) => Scaffold(
+            backgroundColor: surface,
+            body: Center(child: Text('Racks load error: $e')),
+          ),
           data: (rows) {
             return Scaffold(
               backgroundColor: surface,

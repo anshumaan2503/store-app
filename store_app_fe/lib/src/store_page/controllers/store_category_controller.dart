@@ -41,11 +41,14 @@ class CategoryPagedQuery {
 }
 
 final categoryPagedStreamProvider = StreamProvider.autoDispose
-    .family<CategoryPagedResult, CategoryPagedQuery>((ref, q) async* {
+    .family<CategoryPagedResult, CategoryPagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
-      final ctrl = StreamController<CategoryPagedResult>(sync: true);
+      final ctrl = StreamController<CategoryPagedResult>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -54,14 +57,16 @@ final categoryPagedStreamProvider = StreamProvider.autoDispose
                       (e) => StoreCategory.fromMap(e as Map<String, dynamic>),
                     )
                     .toList();
-            ctrl.add(
-              CategoryPagedResult(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? q.page) as int,
-                limit: (data['limit'] ?? q.limit) as int,
-              ),
-            );
+            if (!ctrl.isClosed) {
+              ctrl.add(
+                CategoryPagedResult(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? q.page) as int,
+                  limit: (data['limit'] ?? q.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -69,147 +74,176 @@ final categoryPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllCategoryPaged', handler);
       socket.emit('store:findAllCategoryPaged', q.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            CategoryPagedResult(
+              rows: const [],
+              total: 0,
+              page: q.page,
+              limit: q.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllCategoryPaged', handler);
         ctrl.close();
       });
 
-      yield CategoryPagedResult(
-        rows: const [],
-        total: 0,
-        page: q.page,
-        limit: q.limit,
-      );
-      await for (final v in ctrl.stream) {
-        yield v;
-      }
+      return ctrl.stream;
     });
 
 final parentcategoryAllDataStreamProvider =
-    StreamProvider.autoDispose<List<StoreCategory>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreCategory>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<StoreCategory> returnValue = [];
-      socketManager.getSocket().emit("store:parentcategory", {});
-      socketManager.getSocket().on("store:parentcategory", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreCategory.fromMap(element));
-        }
-        categoryByIdItemStream.add(returnValue);
+    StreamProvider.autoDispose<List<StoreCategory>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreCategory>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreCategory.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:parentcategory", handler);
+      socket.emit("store:parentcategory", {});
+
+      ref.onDispose(() {
+        socket.off("store:parentcategory", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final levelOnecategoryByIdperentDataStreamProvider = StreamProvider.autoDispose
-    .family<List<StoreCategory>, String>((ref, categoryId) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreCategory>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<StoreCategory> returnValue = [];
-      socketManager.getSocket().emit("store:levelOnecategoryByIdperent", {
-        "id": categoryId,
-      });
-      socketManager.getSocket().on("store:levelOnecategoryByIdperent", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreCategory.fromMap(element));
-        }
-        categoryByIdItemStream.add(returnValue);
+    .family<List<StoreCategory>, String>((ref, categoryId) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreCategory>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreCategory.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:levelOnecategoryByIdperent", handler);
+      socket.emit("store:levelOnecategoryByIdperent", {"id": categoryId});
+
+      ref.onDispose(() {
+        socket.off("store:levelOnecategoryByIdperent", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final levelTwocategoryByIdperentDataStreamProvider = StreamProvider.autoDispose
-    .family<List<StoreCategory>, String>((ref, categoryId) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreCategory>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<StoreCategory> returnValue = [];
-      socketManager.getSocket().emit("store:levelTwocategoryByIdperent", {
-        "id": categoryId,
-      });
-      socketManager.getSocket().on("store:levelTwocategoryByIdperent", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreCategory.fromMap(element));
-        }
-        categoryByIdItemStream.add(returnValue);
+    .family<List<StoreCategory>, String>((ref, categoryId) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreCategory>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreCategory.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:levelTwocategoryByIdperent", handler);
+      socket.emit("store:levelTwocategoryByIdperent", {"id": categoryId});
+
+      ref.onDispose(() {
+        socket.off("store:levelTwocategoryByIdperent", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final levelThreecategoryByIdperentDataStreamProvider = StreamProvider
     .autoDispose
-    .family<List<StoreCategory>, String>((ref, categoryId) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreCategory>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<StoreCategory> returnValue = [];
-      socketManager.getSocket().emit("store:levelThreecategoryByIdperent", {
-        "id": categoryId,
-      });
-      socketManager.getSocket().on("store:levelThreecategoryByIdperent", (
-        data,
-      ) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreCategory.fromMap(element));
-        }
-        categoryByIdItemStream.add(returnValue);
+    .family<List<StoreCategory>, String>((ref, categoryId) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreCategory>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreCategory.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:levelThreecategoryByIdperent", handler);
+      socket.emit("store:levelThreecategoryByIdperent", {"id": categoryId});
+
+      ref.onDispose(() {
+        socket.off("store:levelThreecategoryByIdperent", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final itemCategoryByIdperentDataStreamProvider = StreamProvider.autoDispose
-    .family<List<StoreCategory>, String>((ref, categoryId) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreCategory>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<StoreCategory> returnValue = [];
-      socketManager.getSocket().emit("store:itemMachineCategoryGet:req", {
-        "id": categoryId,
-      });
-      socketManager.getSocket().on("store:itemMachineCategoryGet:res", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreCategory.fromMap(element));
-        }
-        categoryByIdItemStream.add(returnValue);
+    .family<List<StoreCategory>, String>((ref, categoryId) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreCategory>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreCategory.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:itemMachineCategoryGet:res", handler);
+      socket.emit("store:itemMachineCategoryGet:req", {"id": categoryId});
+
+      ref.onDispose(() {
+        socket.off("store:itemMachineCategoryGet:res", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final storeCategoryOneStreamProvider = StreamProvider.autoDispose
-    .family<StoreCategory?, String>((ref, id) async* {
+    .family<StoreCategory?, String>((ref, id) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<StoreCategory?>(sync: true);
+      final ctrl = StreamController<StoreCategory?>();
 
       void handler(dynamic data) {
         try {
           if (data is Map) {
-            controller.add(StoreCategory.fromMap(data.cast<String, dynamic>()));
+            if (!ctrl.isClosed) {
+              ctrl.add(StoreCategory.fromMap(data.cast<String, dynamic>()));
+            }
           }
         } catch (_) {}
       }
@@ -219,35 +253,37 @@ final storeCategoryOneStreamProvider = StreamProvider.autoDispose
 
       ref.onDispose(() {
         socket.off('store:findOneCategory', handler);
-        controller.close();
+        ctrl.close();
       });
 
-      yield null;
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return ctrl.stream;
     });
 
 final storeCategoryByItemissueProvider =
-    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<Map<String, dynamic>>> categoryByIdItemStream =
-          StreamController(sync: true);
-      List<Map<String, dynamic>> returnValue = [];
-      socketManager.getSocket().emit("store:issueByIdItemWithCategory");
-      socketManager.getSocket().on("store:issueByIdItemWithCategory", (data) {
-        print(data);
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(element);
-        }
-        categoryByIdItemStream.add(returnValue);
+    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<Map<String, dynamic>>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:issueByIdItemWithCategory", handler);
+      socket.emit("store:issueByIdItemWithCategory");
+
+      ref.onDispose(() {
+        socket.off("store:issueByIdItemWithCategory", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in categoryByIdItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final storeCategoryControllerProvider = Provider(

@@ -62,11 +62,14 @@ class PagedRooms {
 
 /* -------- WS: list paged -------- */
 final storeRoomPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRooms, RoomQuery>((ref, query) async* {
+    .family<PagedRooms, RoomQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRooms>(sync: true);
+      final controller = StreamController<PagedRooms>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -74,14 +77,16 @@ final storeRoomPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRoom.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRooms(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRooms(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -89,28 +94,38 @@ final storeRoomPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllRoomPaged', handler);
       socket.emit('store:findAllRoomPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRooms(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllRoomPaged', handler);
         controller.close();
       });
 
-      yield PagedRooms(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final storeSrcapRoomPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRooms, RoomQuery>((ref, query) async* {
+    .family<PagedRooms, RoomQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRooms>(sync: true);
+      final controller = StreamController<PagedRooms>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -118,14 +133,16 @@ final storeSrcapRoomPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRoom.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRooms(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRooms(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -133,28 +150,38 @@ final storeSrcapRoomPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllScrapRoomPaged', handler);
       socket.emit('store:findAllScrapRoomPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRooms(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllScrapRoomPaged', handler);
         controller.close();
       });
 
-      yield PagedRooms(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final storeGoodMachineRoomPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRooms, RoomQuery>((ref, query) async* {
+    .family<PagedRooms, RoomQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRooms>(sync: true);
+      final controller = StreamController<PagedRooms>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -162,14 +189,16 @@ final storeGoodMachineRoomPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRoom.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRooms(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRooms(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -177,28 +206,38 @@ final storeGoodMachineRoomPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllGoodMachineRoomPaged', handler);
       socket.emit('store:findAllGoodMachineRoomPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRooms(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllGoodMachineRoomPaged', handler);
         controller.close();
       });
 
-      yield PagedRooms(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final storeSrcapMachineRoomPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRooms, RoomQuery>((ref, query) async* {
+    .family<PagedRooms, RoomQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRooms>(sync: true);
+      final controller = StreamController<PagedRooms>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -206,14 +245,16 @@ final storeSrcapMachineRoomPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRoom.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRooms(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRooms(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -221,118 +262,162 @@ final storeSrcapMachineRoomPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllScrapMachineRoomPaged', handler);
       socket.emit('store:findAllScrapMachineRoomPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRooms(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllScrapMachineRoomPaged', handler);
         controller.close();
       });
 
-      yield PagedRooms(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final findAllRoomDataByScrapStreamProvider =
-    StreamProvider.autoDispose<List<StoreRoom>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreRoom>> roomStream = StreamController(
-        sync: true,
-      );
-      List<StoreRoom> returnValue = [];
-      socketManager.getSocket().emit("store:findAllRoomDataByScrap");
-      socketManager.getSocket().on("store:findAllRoomDataByScrap", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreRoom.fromMap(element));
-        }
-        roomStream.add(returnValue);
+    StreamProvider.autoDispose<List<StoreRoom>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreRoom>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = <StoreRoom>[];
+          for (var element in data) {
+            if (element is Map) {
+              list.add(StoreRoom.fromMap(Map<String, dynamic>.from(element)));
+            }
+          }
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:findAllRoomDataByScrap", handler);
+      socket.emit("store:findAllRoomDataByScrap");
+
+      ref.onDispose(() {
+        socket.off("store:findAllRoomDataByScrap", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in roomStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final findAllRoomDataByGoodStreamProvider =
-    StreamProvider.autoDispose<List<StoreRoom>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreRoom>> roomStream = StreamController(
-        sync: true,
-      );
-      List<StoreRoom> returnValue = [];
-      socketManager.getSocket().emit("store:findAllRoomDataByGood");
-      socketManager.getSocket().on("store:findAllRoomDataByGood", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreRoom.fromMap(element));
-        }
-        roomStream.add(returnValue);
+    StreamProvider.autoDispose<List<StoreRoom>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreRoom>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = <StoreRoom>[];
+          for (var element in data) {
+            if (element is Map) {
+              list.add(StoreRoom.fromMap(Map<String, dynamic>.from(element)));
+            }
+          }
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:findAllRoomDataByGood", handler);
+      socket.emit("store:findAllRoomDataByGood");
+
+      ref.onDispose(() {
+        socket.off("store:findAllRoomDataByGood", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in roomStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final findAllMachineRoomDataByGoodStreamProvider = StreamProvider.autoDispose<
   List<StoreRoom>
->((ref) async* {
-  SocketManager socketManager = ref.watch(socketProvider);
-  StreamController<List<StoreRoom>> roomStream = StreamController(sync: true);
-  List<StoreRoom> returnValue = [];
-  socketManager.getSocket().emit("store:findAllMachineRoomDataByGood");
-  socketManager.getSocket().on("store:findAllMachineRoomDataByGood", (data) {
-    returnValue = [];
-    for (var element in data) {
-      returnValue.add(StoreRoom.fromMap(element));
-    }
-    roomStream.add(returnValue);
+>((ref) {
+  final socket = ref.watch(socketProvider).getSocket();
+  final ctrl = StreamController<List<StoreRoom>>();
+
+  void handler(dynamic data) {
+    try {
+      if (data is! List) return;
+      final list = <StoreRoom>[];
+      for (var element in data) {
+        if (element is Map) {
+          list.add(StoreRoom.fromMap(Map<String, dynamic>.from(element)));
+        }
+      }
+      if (!ctrl.isClosed) ctrl.add(list);
+    } catch (_) {}
+  }
+
+  socket.on("store:findAllMachineRoomDataByGood", handler);
+  socket.emit("store:findAllMachineRoomDataByGood");
+
+  ref.onDispose(() {
+    socket.off("store:findAllMachineRoomDataByGood", handler);
+    ctrl.close();
   });
 
-  yield returnValue;
-  await for (final returnValue in roomStream.stream) {
-    yield returnValue;
-  }
+  return ctrl.stream;
 });
 
 final findAllMachineRoomDataByScrapStreamProvider = StreamProvider.autoDispose<
   List<StoreRoom>
->((ref) async* {
-  SocketManager socketManager = ref.watch(socketProvider);
-  StreamController<List<StoreRoom>> roomStream = StreamController(sync: true);
-  List<StoreRoom> returnValue = [];
-  socketManager.getSocket().emit("store:findAllMachineRoomDataByScrap");
-  socketManager.getSocket().on("store:findAllMachineRoomDataByScrap", (data) {
-    returnValue = [];
-    for (var element in data) {
-      returnValue.add(StoreRoom.fromMap(element));
-    }
-    roomStream.add(returnValue);
+>((ref) {
+  final socket = ref.watch(socketProvider).getSocket();
+  final ctrl = StreamController<List<StoreRoom>>();
+
+  void handler(dynamic data) {
+    try {
+      if (data is! List) return;
+      final list = <StoreRoom>[];
+      for (var element in data) {
+        if (element is Map) {
+          list.add(StoreRoom.fromMap(Map<String, dynamic>.from(element)));
+        }
+      }
+      if (!ctrl.isClosed) ctrl.add(list);
+    } catch (_) {}
+  }
+
+  socket.on("store:findAllMachineRoomDataByScrap", handler);
+  socket.emit("store:findAllMachineRoomDataByScrap");
+
+  ref.onDispose(() {
+    socket.off("store:findAllMachineRoomDataByScrap", handler);
+    ctrl.close();
   });
 
-  yield returnValue;
-  await for (final returnValue in roomStream.stream) {
-    yield returnValue;
-  }
+  return ctrl.stream;
 });
 
 /* -------- WS: get one -------- */
 final storeRoomOneStreamProvider = StreamProvider.autoDispose
-    .family<StoreRoom?, String>((ref, id) async* {
+    .family<StoreRoom?, String>((ref, id) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<StoreRoom?>(sync: true);
+      final controller = StreamController<StoreRoom?>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
-            controller.add(StoreRoom.fromMap(data.cast<String, dynamic>()));
+            if (!controller.isClosed) {
+              controller.add(StoreRoom.fromMap(data.cast<String, dynamic>()));
+            }
           }
         } catch (_) {}
       }
@@ -340,36 +425,47 @@ final storeRoomOneStreamProvider = StreamProvider.autoDispose
       socket.on('store:findOneRoom', handler);
       socket.emit('store:findOneRoom', {'id': id});
 
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) controller.add(null);
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findOneRoom', handler);
         controller.close();
       });
 
-      yield null;
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final roomAllDataStreamProvider = StreamProvider.autoDispose<List<StoreRoom>>((
   ref,
-) async* {
-  SocketManager socketManager = ref.watch(socketProvider);
-  StreamController<List<StoreRoom>> roomStream = StreamController(sync: true);
-  List<StoreRoom> returnValue = [];
-  socketManager.getSocket().emit("store:findAllRoomData", {});
-  socketManager.getSocket().on("store:findAllRoomData", (data) {
-    returnValue = [];
-    for (var element in data) {
-      returnValue.add(StoreRoom.fromMap(element));
-    }
-    roomStream.add(returnValue);
+) {
+  final socket = ref.watch(socketProvider).getSocket();
+  final ctrl = StreamController<List<StoreRoom>>();
+
+  void handler(dynamic data) {
+    try {
+      if (data is! List) return;
+      final list = <StoreRoom>[];
+      for (var element in data) {
+        if (element is Map) {
+          list.add(StoreRoom.fromMap(Map<String, dynamic>.from(element)));
+        }
+      }
+      if (!ctrl.isClosed) ctrl.add(list);
+    } catch (_) {}
+  }
+
+  socket.on("store:findAllRoomData", handler);
+  socket.emit("store:findAllRoomData", {});
+
+  ref.onDispose(() {
+    socket.off("store:findAllRoomData", handler);
+    ctrl.close();
   });
 
-  yield returnValue;
-  await for (final returnValue in roomStream.stream) {
-    yield returnValue;
-  }
+  return ctrl.stream;
 });
 
 final storeRoomControllerProvider = Provider<RoomNotifier>((ref) {

@@ -108,7 +108,7 @@ export class RackGateway {
     @MessageBody() body: any,
     @ConnectedSocket() client: Socket,
   ) {
-    const id = String(body?.id ?? '');
+    const id = String(body?.id ?? body?.rackId ?? body?._id ?? '').trim();
     const res = await this.racks.findOne(id);
     client.emit('store:findOneRack', res);
   }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:store_app/src/store_page/controllers/indent_draft_controller.dart';
 import 'package:store_app/src/store_page/controllers/guided_tour_controller.dart';
 import 'package:store_app/src/store_page/domains/models/indent_draft_model.dart';
+import '../../widgets/store_ui_state_widgets.dart';
 
 /* ---------------- Palette ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -18,9 +19,14 @@ const _bgTop = Color(0xFFFFFFF3);
 const _bgBottom = _surfaceAlt;
 
 class IndentDraftsPage extends ConsumerStatefulWidget {
-  const IndentDraftsPage({super.key, this.isEmbedded = false});
+  const IndentDraftsPage({
+    super.key,
+    this.isEmbedded = false,
+    this.onSubmitSuccess,
+  });
 
   final bool isEmbedded;
+  final VoidCallback? onSubmitSuccess;
 
   @override
   ConsumerState<IndentDraftsPage> createState() => _IndentDraftsPageState();
@@ -75,7 +81,7 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
             isError ? Colors.red.shade700 : _ink900,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 3),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -317,6 +323,16 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
         final count = result['submittedCount']?.toString() ?? '${toSubmit.length}';
         _unselectedItemIds.clear();
         _showSnack('Combined Indent $indentNo ($count items) submitted for Approval!');
+
+        if (mounted) {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop(true);
+          } else if (Navigator.of(context, rootNavigator: true).canPop()) {
+            Navigator.of(context, rootNavigator: true).pop(true);
+          } else {
+            widget.onSubmitSuccess?.call();
+          }
+        }
       } else {
         final err = ref.read(indentDraftControllerProvider).error ?? 'Submission failed';
         _showSnack(err, isError: true);
@@ -770,13 +786,14 @@ class _IndentDraftsPageState extends ConsumerState<IndentDraftsPage> {
                           '• Unit: ${item.unit}',
                           style: const TextStyle(color: _ink600, fontSize: 11, fontWeight: FontWeight.w600),
                         ),
-                        if (item.reason.isNotEmpty)
-                          Text(
-                            '• Reason: ${item.reason}',
-                            style: const TextStyle(color: _ink700, fontSize: 11, fontStyle: FontStyle.italic),
-                          ),
                       ],
                     ),
+                    if (item.reason.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      StoreDynamicReasonBox(
+                        reason: item.reason,
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../auth/controllers/users_controller.dart';
 import '../../../controllers/store_grn_controller.dart';
 import '../../../domains/models/store_grn_model.dart';
+import '../../../../components/utils.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -59,6 +60,7 @@ class _GrnDetailApprovalSheetState
           .approveGrn(widget.grn.id);
       if (ok && mounted) {
         Navigator.of(context).pop();
+        showSnackBar('GRN ${widget.grn.grnNumber} Approved! Ready for QR putaway.');
       }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -116,6 +118,7 @@ class _GrnDetailApprovalSheetState
             .rejectGrn(widget.grn.id, reasonCtrl.text.trim());
         if (ok && mounted) {
           Navigator.of(context).pop();
+          showSnackBar('GRN ${widget.grn.grnNumber} Rejected', isError: true);
         }
       } finally {
         if (mounted) setState(() => _isProcessing = false);
@@ -454,7 +457,7 @@ class _GrnDetailApprovalSheetState
                       child: ElevatedButton(
                         onPressed: _isProcessing ? null : _approve,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D32),
+                          backgroundColor: _ink900,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(

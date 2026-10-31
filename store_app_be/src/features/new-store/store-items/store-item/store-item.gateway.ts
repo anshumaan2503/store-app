@@ -50,6 +50,16 @@ export class StoreNewItemGateway {
     }
   }
 
+  broadcastRefillRequestsUpdated() {
+    try {
+      if (this.server) {
+        this.server.emit('store:refillRequests:updated', { timestamp: Date.now() });
+      }
+    } catch (e) {
+      console.error('[StoreNewItemGateway] broadcastRefillRequestsUpdated error:', e);
+    }
+  }
+
   @SubscribeMessage('store:findRealAllItemPaged')
   async findRealAllPaged(
     @ConnectedSocket() client: Socket,

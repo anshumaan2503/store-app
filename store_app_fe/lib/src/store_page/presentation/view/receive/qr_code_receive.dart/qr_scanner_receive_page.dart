@@ -6,7 +6,10 @@ import '../scan_item_receive_page.dart';
 import '../scan_rack_receive_page.dart';
 
 class QRCodeScannerRackPage extends StatefulWidget {
-  const QRCodeScannerRackPage({super.key});
+  final String? initialItemId;
+  final String? initialIndentId;
+  final num? initialIndentQty;
+  const QRCodeScannerRackPage({super.key, this.initialItemId, this.initialIndentId, this.initialIndentQty});
 
   @override
   State<QRCodeScannerRackPage> createState() => _QRCodeScannerRackPageState();
@@ -17,9 +20,6 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
   final double scanArea = 300;
 
   bool _isHandlingCode = false;
-
-  // ✅ system back blocked by default; allow only when app back is pressed
-  bool _allowPopOnce = false;
 
   @override
   void initState() {
@@ -46,31 +46,14 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
   }
 
   Future<void> _appBack() async {
-    // Temporarily allow pop, then pop, then lock again if not popped.
     if (!mounted) return;
-
-    setState(() => _allowPopOnce = true);
-
-    final didPop = await Navigator.of(context).maybePop();
-
-    if (!mounted) return;
-
-    // If it didn't pop (root route), re-lock back.
-    if (!didPop) {
-      setState(() => _allowPopOnce = false);
-    }
-    // If it did pop, widget will dispose anyway.
+    Navigator.of(context).maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // ✅ System back/gesture will be blocked unless _allowPopOnce=true
-      canPop: _allowPopOnce,
-      onPopInvoked: (didPop) {
-        // If a system-back attempt happens while locked, it won't pop.
-        // No action needed.
-      },
+      canPop: true,
       child: Scaffold(
         appBar: AppBar(
           centerTitle: true,
@@ -108,7 +91,6 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
               case TorchState.off:
               case TorchState.auto:
               case TorchState.unavailable:
-              default:
                 icon = Icons.flash_on_outlined;
             }
 
@@ -232,10 +214,10 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
       if (result.contains('.')) {
         await _handleScannedValue(result);
       } else {
-        await Navigator.push<bool>(
+        await Navigator.pushReplacement<bool, void>(
           context,
           MaterialPageRoute(
-            builder: (context) => ScanRackReceivePage(rackId: result),
+            builder: (context) => ScanRackReceivePage(rackId: result, initialItemId: widget.initialItemId, initialIndentId: widget.initialIndentId, initialIndentQty: widget.initialIndentQty),
           ),
         );
       }
@@ -261,42 +243,24 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
     switch (qrCodeId) {
       case "P0040":
         {
-          final result = await Navigator.push<bool>(
+          if (!mounted) return;
+          await Navigator.pushReplacement<bool, void>(
             context,
             MaterialPageRoute(
               builder: (context) => ScanItemReceivePage(itemId: databaseId),
             ),
           );
-
-          if (!mounted) return;
-
-          if (result == true) {
-            // Use app navigation (not system)
-            Navigator.pop(context, true);
-          } else {
-            _isHandlingCode = false;
-            await _controller.start();
-          }
           break;
         }
       case "P0041":
         {
-          final result = await Navigator.push<bool>(
+          if (!mounted) return;
+          await Navigator.pushReplacement<bool, void>(
             context,
             MaterialPageRoute(
-              builder: (context) => ScanRackReceivePage(rackId: databaseId),
+              builder: (context) => ScanRackReceivePage(rackId: databaseId, initialItemId: widget.initialItemId, initialIndentId: widget.initialIndentId, initialIndentQty: widget.initialIndentQty),
             ),
           );
-
-          if (!mounted) return;
-
-          if (result == true) {
-            // Use app navigation (not system)
-            Navigator.pop(context, true);
-          } else {
-            _isHandlingCode = false;
-            await _controller.start();
-          }
           break;
         }
 

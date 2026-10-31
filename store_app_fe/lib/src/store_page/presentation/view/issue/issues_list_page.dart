@@ -15,12 +15,12 @@ import '../../widgets/store_ui_state_widgets.dart';
 import 'issue_create_page.dart';
 import 'issue_find_items_page.dart';
 import 'issue_scan_page.dart';
+import 'qr_code_issue/item_issue_verify_scan_page.dart';
 import 'qr_code_issue/qr_scanner_item_issue_page.dart';
 import '../../../controllers/guided_tour_controller.dart';
 import '../../../controllers/store_cart_controller.dart';
 import '../cart/store_cart_page.dart';
 import '../items/find_item_page.dart';
-import '../receive/stock_refill_requests_list_view.dart';
 
 /* ---------------- Palette (matches your theme) ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -88,7 +88,6 @@ int _remainApprove(IssueLine l) => math.max(
 enum IssueTabSection {
   ready,
   history,
-  submittedIndents,
 }
 
 class _AbovePaginationFloatingActionButtonLocation
@@ -152,9 +151,6 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
   }
 
   Widget _buildTopSectionTabs() {
-    final cartConfig = ref.watch(storeCartConfigProvider);
-    final showIndentsTab = cartConfig.indentApprovalRequired;
-
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -188,7 +184,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
               ),
             ),
           ),
-        const SizedBox(width: 4),
+          const SizedBox(width: 4),
           Expanded(
             child: _buildSectionTabButton(
               title: 'Issue History',
@@ -207,27 +203,6 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
               },
             ),
           ),
-          if (showIndentsTab) ...[
-            const SizedBox(width: 4),
-            Expanded(
-              child: _buildSectionTabButton(
-                title: 'Submitted Indents',
-                subtitle: 'Approver review & verify',
-                icon: Icons.assignment_turned_in_rounded,
-                isSelected: _tabSection == IssueTabSection.submittedIndents,
-                activeColor: const Color(0xFFE65100),
-                activeBgColor: const Color(0xFFFFF3E0),
-                onTap: () {
-                  if (_tabSection != IssueTabSection.submittedIndents) {
-                    setState(() {
-                      _tabSection = IssueTabSection.submittedIndents;
-                      _page = 1;
-                    });
-                  }
-                },
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -486,15 +461,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                     child: Column(
                       children: [
                         _buildTopSectionTabs(),
-                        if (_tabSection == IssueTabSection.submittedIndents)
-                          const Expanded(
-                            child: StockRefillRequestsListView(
-                              initialStatusFilter: 'PENDING',
-                              isSubmittedIndentsSection: true,
-                            ),
-                          )
-                        else ...[
-                          const SizedBox(height: 10),
+                        const SizedBox(height: 10),
                           _SearchBarRow(
                             controller: _searchCtrl,
                             onChanged:
@@ -509,7 +476,6 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                                 _page = 1;
                               });
                             },
-                            onFilter: () {},
                             onCreate:
                                 (user.isSuperAdmin ||
                                         user.appWorks.contains("storeadmin") ||
@@ -520,12 +486,9 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                           const SizedBox(height: 12),
                           Expanded(
                             child: issuesAv.when(
-                            loading:
-                                () => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                            error:
-                                (e, _) => StoreErrorView(
+                              loading: () => const StoreLoadingWidget(),
+                              error:
+                                  (e, _) => StoreErrorView(
                                   error: e,
                                   onRetry:
                                       () => ref.invalidate(
@@ -590,7 +553,6 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                               ),
                         ),
                       ],
-                    ],
                     ),
                   ),
                 ),
@@ -609,14 +571,14 @@ class _SearchBarRow extends StatelessWidget {
   const _SearchBarRow({
     required this.controller,
     required this.onChanged,
-    required this.onFilter,
+    this.onFilter,
     required this.onReset,
     this.onCreate,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
-  final VoidCallback onFilter;
+  final VoidCallback? onFilter;
   final VoidCallback onReset;
   final VoidCallback? onCreate;
 
@@ -660,59 +622,17 @@ class _SearchBarRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           OutlinedButton(
-            onPressed: onFilter,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _ink900,
-              side: const BorderSide(color: _stroke),
-              padding: EdgeInsets.symmetric(
-                horizontal: isVeryNarrow ? 8 : 12,
-                vertical: 10,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.tune_rounded, size: 17),
-                if (!isVeryNarrow) ...[
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Filter',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
             onPressed: onReset,
             style: OutlinedButton.styleFrom(
               foregroundColor: _ink900,
               side: const BorderSide(color: _stroke),
-              padding: EdgeInsets.symmetric(
-                horizontal: isVeryNarrow ? 8 : 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.all(10),
+              minimumSize: const Size(40, 40),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.refresh_rounded, size: 17),
-                if (!isVeryNarrow) ...[
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Reset',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ],
-            ),
+            child: const Icon(Icons.refresh_rounded, size: 18),
           ),
           if (onCreate != null && isDesktop) ...[
             const SizedBox(width: 8),
@@ -788,6 +708,81 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
         builder: (_) => IssueFindItemsPage(issue: issue),
       ),
     );
+  }
+
+  Future<void> _openScanItem(IssueModel issue, IssueLine line) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => ItemIssueVerifyScanPage(
+              issue: issue,
+              line: line,
+            ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (result == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Wrong QR',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          backgroundColor: Color(0xFFC62828),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Verified: ${line.itemName}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF2E7D32),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      final canIssueFromStock =
+          issue.isApproved && !issue.isRejected && !issue.isFullyPickedUp;
+      final unissuedCount = issue.lines.fold<int>(
+        0,
+        (sum, l) => sum + (l.approvedQty - l.issuedQty).clamp(0, 999999),
+      );
+
+      if (canIssueFromStock && unissuedCount > 0) {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder:
+              (_) => IssueSheet(
+                issue: issue,
+                onChanged: widget.onChanged,
+              ),
+        );
+      }
+    }
   }
 
   Future<void> _handleRevertApproval(
@@ -1260,6 +1255,7 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
                     lines: issue.lines,
                     initialExpanded: issue.lines.length <= 1,
                     onFindItem: canFindItem ? _openFindItem : null,
+                    onScanItem: (line) => _openScanItem(issue, line),
                   ),
                 ),
               ),
@@ -1744,11 +1740,13 @@ class _ItemsAccordion extends StatefulWidget {
     required this.lines,
     this.initialExpanded = false,
     this.onFindItem,
+    this.onScanItem,
   });
 
   final List<IssueLine> lines;
   final bool initialExpanded;
   final void Function(IssueLine)? onFindItem;
+  final void Function(IssueLine)? onScanItem;
 
   @override
   State<_ItemsAccordion> createState() => _ItemsAccordionState();
@@ -2154,6 +2152,15 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
                     ),
                   ),
                 ),
+                if (widget.onScanItem != null)
+                  IconButton(
+                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                    color: _ink600,
+                    tooltip: 'Scan Item QR to Verify',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                    onPressed: () => widget.onScanItem!(row),
+                  ),
                 if (widget.onFindItem != null)
                   IconButton(
                     icon: const Icon(Icons.location_searching_rounded, size: 16),
@@ -2289,6 +2296,21 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
                   ),
                 ),
               ),
+              if (widget.onScanItem != null)
+                InkWell(
+                  onTap: () => widget.onScanItem!(row),
+                  borderRadius: BorderRadius.circular(6),
+                  child: const Padding(
+                    padding: EdgeInsets.all(3),
+                    child: Icon(
+                      Icons.qr_code_scanner_rounded,
+                      size: 16,
+                      color: _ink700,
+                    ),
+                  ),
+                ),
+              if (widget.onScanItem != null && widget.onFindItem != null)
+                const SizedBox(width: 4),
               if (widget.onFindItem != null)
                 InkWell(
                   onTap: () => widget.onFindItem!(row),
@@ -2385,6 +2407,9 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
   final Map<String, String> _modes = {}; // add|set
   final Set<String> _busyLineIds = {};
   final Set<String> _expandedLineIds = {};
+  final Set<String> _selectedItemIds = {};
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
   bool _bulkBusy = false;
 
   bool get _canApproveNow => _lines.any((l) => _remainApprove(l) > 0);
@@ -2423,6 +2448,7 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     for (final c in _qtyCtrls.values) {
       c.dispose();
     }
@@ -2435,7 +2461,6 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
   int _asInt(String s, int fallback) => int.tryParse(s.trim()) ?? fallback;
 
   Future<String> _getUid() async {
-    // ✅ FIX: uid can be null
     final uid = (await ref.read(spRepositoryProvider).getStringValue('uid'));
     return uid.trim();
   }
@@ -2454,7 +2479,6 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
     final remaining = _remainApprove(line);
     final requested = _i(line.requestedQty);
 
-    // ✅ Guard (button is disabled anyway, but keeps API safe)
     if (mode == 'add' && remaining <= 0) {
       showSnackBar('Nothing remaining to approve');
       return;
@@ -2477,7 +2501,6 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
         return;
       }
     } else {
-      // set mode
       if (total > requested) {
         showSnackBar('Set total cannot exceed requested ($requested)');
         return;
@@ -2540,15 +2563,12 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
                 return x;
               }).toList();
 
-          // ✅ compute after updating _lines
           allDoneAfter = _lines.every((l) => _remainApprove(l) <= 0);
         });
       }
 
-      // ✅ Refresh list always after approve
       widget.refreshIssues();
 
-      // ✅ If ALL lines done -> close sheet
       if (allDoneAfter && mounted) {
         Navigator.pop(context);
         return;
@@ -2557,7 +2577,7 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Approved successfully')));
+      ).showSnackBar(const SnackBar(content: Text('Updated successfully')));
     } catch (e) {
       showSnackBar('Approve failed: $e');
     } finally {
@@ -2565,8 +2585,17 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
     }
   }
 
+  Future<void> _rejectOne(IssueLine line) async {
+    final remaining = _remainApprove(line);
+    if (remaining <= 0) return;
+    _qtyCtrls[line.itemId]?.text = '0';
+    _rejectQtyCtrls[line.itemId]?.text = '$remaining';
+    await _approveOne(line);
+  }
+
   Future<void> _rejectAllRequest() async {
     final uid = await _getUid();
+    if (!mounted) return;
     if (uid.isEmpty) {
       showSnackBar('Missing uid');
       return;
@@ -2657,29 +2686,31 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
     }
   }
 
-  Future<void> _approveAllRemaining() async {
+  Future<void> _approveSelected() async {
     final uid = await _getUid();
     if (uid.isEmpty) {
       showSnackBar('Missing uid');
       return;
     }
 
-    final linesPayload =
-        _lines
-            .where((l) => _remainApprove(l) > 0)
-            .map(
-              (l) => {
-                'itemId': l.itemId,
-                'approvedQty': _remainApprove(l),
-                'mode': 'add',
-              },
-            )
-            .toList();
+    final targetLines = _selectedItemIds.isEmpty
+        ? _lines.where((l) => _remainApprove(l) > 0).toList()
+        : _lines.where((l) => _selectedItemIds.contains(l.itemId) && _remainApprove(l) > 0).toList();
 
-    if (linesPayload.isEmpty) {
+    if (targetLines.isEmpty) {
       showSnackBar('Nothing remaining to approve');
       return;
     }
+
+    final linesPayload = targetLines.map((l) {
+      final remaining = _remainApprove(l);
+      final qty = _asInt(_qtyCtrls[l.itemId]?.text ?? '', remaining);
+      return {
+        'itemId': l.itemId,
+        'approvedQty': qty > 0 ? qty : remaining,
+        'mode': 'add',
+      };
+    }).toList();
 
     setState(() => _bulkBusy = true);
     try {
@@ -2700,19 +2731,152 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
     }
   }
 
-  Future<void> _quickApproveOne(IssueLine line) async {
-    final ra = _remainApprove(line);
-    if (ra <= 0) return;
-    _modes[line.itemId] = 'add';
-    _qtyCtrls[line.itemId]?.text = '$ra';
-    _rejectQtyCtrls[line.itemId]?.text = '0';
-    await _approveOne(line);
+  Future<void> _rejectSelected() async {
+    final uid = await _getUid();
+    if (uid.isEmpty) {
+      showSnackBar('Missing uid');
+      return;
+    }
+
+    final pendingLines = _lines.where((l) => _remainApprove(l) > 0).toList();
+    final targetLines = _selectedItemIds.isEmpty
+        ? pendingLines
+        : _lines.where((l) => _selectedItemIds.contains(l.itemId) && _remainApprove(l) > 0).toList();
+
+    if (targetLines.isEmpty) {
+      showSnackBar('Nothing to reject');
+      return;
+    }
+
+    if (targetLines.length == pendingLines.length) {
+      await _rejectAllRequest();
+      return;
+    }
+
+    setState(() => _bulkBusy = true);
+    try {
+      for (final line in targetLines) {
+        final remaining = _remainApprove(line);
+        if (remaining <= 0) continue;
+        await ref.read(issueControllerProvider).approveLine(
+          issueId: widget.issue.id,
+          itemId: line.itemId,
+          approvedBy: uid,
+          approvedQty: 0,
+          approvedRejectQty: remaining,
+          mode: 'add',
+        );
+      }
+      widget.refreshIssues();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      showSnackBar('Reject failed: $e');
+    } finally {
+      if (mounted) setState(() => _bulkBusy = false);
+    }
+  }
+
+  Widget _buildQtyStepper({
+    required String label,
+    required TextEditingController controller,
+    required int max,
+    required Color activeColor,
+    required VoidCallback onChanged,
+  }) {
+    final current = _asInt(controller.text, 0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: _ink700,
+            fontWeight: FontWeight.w800,
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFD1D5DB), width: 1.5),
+          ),
+          child: Row(
+            children: [
+              InkWell(
+                onTap: current > 0
+                    ? () {
+                        final n = math.max(0, current - 1);
+                        controller.text = '$n';
+                        onChanged();
+                      }
+                    : null,
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  child: Icon(
+                    Icons.remove_rounded,
+                    size: 16,
+                    color: current > 0 ? activeColor : const Color(0xFF9CA3AF),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  onChanged: (_) => onChanged(),
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 6),
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: current < max
+                    ? () {
+                        final n = math.min(max, current + 1);
+                        controller.text = '$n';
+                        onChanged();
+                      }
+                    : null,
+                borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  child: Icon(
+                    Icons.add_rounded,
+                    size: 16,
+                    color: current < max ? activeColor : const Color(0xFF9CA3AF),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final maxH = MediaQuery.of(context).size.height * 0.82;
+    final maxH = MediaQuery.of(context).size.height * 0.86;
     final totalRemaining = _lines.fold<int>(0, (sum, l) => sum + _remainApprove(l));
+
+    final selectedCount = _selectedItemIds.length;
+
+    final filteredLines = _lines.where((l) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery;
+      return l.itemName.toLowerCase().contains(q);
+    }).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2742,28 +2906,49 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     children: [
-                      // Header
+                      // 1. Dynamic Header (Full issue number visibility on mobile)
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  'Approve Requisition: ${widget.issue.issNo}',
-                                  style: const TextStyle(
-                                    color: _ink900,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 15,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 3,
+                                  children: [
+                                    const Text(
+                                      'Approve Requisition:',
+                                      style: TextStyle(
+                                        color: _ink900,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF3F4F6),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: _stroke),
+                                      ),
+                                      child: Text(
+                                        widget.issue.issNo,
+                                        style: const TextStyle(
+                                          color: _ink900,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 3),
                                 Text(
-                                  '${_lines.length} ${_lines.length == 1 ? 'item' : 'items'} · $totalRemaining units pending',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                  '${_lines.length} ${_lines.length == 1 ? "item" : "items"} · $totalRemaining units pending',
                                   style: const TextStyle(
                                     color: _ink600,
                                     fontWeight: FontWeight.w600,
@@ -2773,503 +2958,491 @@ class _ApproveSheetState extends ConsumerState<_ApproveSheet> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          if (_canApproveNow) ...[
-                            FilledButton.icon(
-                              onPressed: _bulkBusy ? null : _approveAllRemaining,
-                              icon: _bulkBusy
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.done_all_rounded, size: 16),
-                              label: Text(
-                                isDesktop ? 'Approve All ($totalRemaining)' : 'Approve All',
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                              ),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF059669),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          TextButton.icon(
-                            onPressed: _rejectAllRequest,
-                            icon: const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFC62828)),
-                            label: Text(
-                              isDesktop ? 'Reject All' : 'Reject',
-                              style: const TextStyle(
-                                color: Color(0xFFC62828),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFFC62828),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              backgroundColor: const Color(0xFFFFEBEE),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
                           IconButton(
                             onPressed: () => Navigator.pop(context),
                             icon: const Icon(Icons.close_rounded),
                             tooltip: 'Close',
+                            visualDensity: VisualDensity.compact,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
 
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: _lines.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (_, i) {
-                            final l = _lines[i];
-                            final busy = _busyLineIds.contains(l.itemId);
-                            final remaining = _remainApprove(l);
-                            final isExpanded = _expandedLineIds.contains(l.itemId);
-                            final isFullyApproved = remaining <= 0;
-                            final isLineReject =
-                                (_qtyCtrls[l.itemId]?.text.trim() == '0' ||
-                                    _asInt(_qtyCtrls[l.itemId]?.text ?? '', 0) == 0) &&
-                                _asInt(_rejectQtyCtrls[l.itemId]?.text ?? '', 0) > 0;
-                            final disabled = busy || isFullyApproved;
-
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: _surface,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: isExpanded
-                                      ? _accentMint.withValues(alpha: 0.8)
-                                      : (isFullyApproved
-                                          ? const Color(0xFFA5D6A7).withValues(alpha: 0.6)
-                                          : _stroke),
-                                  width: isExpanded ? 1.5 : 1,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x06000000),
-                                    blurRadius: 6,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  // Accordion Header Bar
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        if (isExpanded) {
-                                          _expandedLineIds.remove(l.itemId);
-                                        } else {
-                                          _expandedLineIds.add(l.itemId);
-                                        }
-                                      });
+                      // 2. Search Field
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _stroke),
+                        ),
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _ink900),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Search items (e.g. name, code...)...',
+                            hintStyle: const TextStyle(fontSize: 12.5, color: _ink600),
+                            prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _ink600),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded, size: 16, color: _ink600),
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() => _searchQuery = '');
                                     },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      color: isFullyApproved
-                                          ? const Color(0xFFE8F5E9).withValues(alpha: 0.35)
-                                          : (isExpanded
-                                              ? _surfaceAlt.withValues(alpha: 0.45)
-                                              : Colors.transparent),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(7),
-                                            decoration: BoxDecoration(
-                                              color: isFullyApproved
-                                                  ? const Color(0xFFE8F5E9)
-                                                  : _surfaceAlt.withValues(alpha: .6),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Icon(
-                                              isFullyApproved
-                                                  ? Icons.check_circle_rounded
-                                                  : Icons.inventory_2_outlined,
-                                              size: 16,
-                                              color: isFullyApproved
-                                                  ? const Color(0xFF059669)
-                                                  : _ink900,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  l.itemName,
-                                                  style: TextStyle(
-                                                    color: isFullyApproved ? _ink700 : _ink900,
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 13.5,
-                                                    decoration: isFullyApproved
-                                                        ? TextDecoration.none
-                                                        : null,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 3),
-                                                Wrap(
-                                                  spacing: 6,
-                                                  runSpacing: 4,
-                                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: _surfaceAlt.withValues(alpha: 0.5),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: Text(
-                                                        'Req: ${_i(l.requestedQty)}',
-                                                        style: const TextStyle(
-                                                          color: _ink700,
-                                                          fontWeight: FontWeight.w700,
-                                                          fontSize: 11,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isFullyApproved)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                          color: const Color(0xFFE8F5E9),
-                                                          borderRadius: BorderRadius.circular(6),
-                                                        ),
-                                                        child: Text(
-                                                          '✓ Fully Approved (${_i(l.approvedQty)})',
-                                                          style: const TextStyle(
-                                                            color: Color(0xFF2E7D32),
-                                                            fontWeight: FontWeight.w800,
-                                                            fontSize: 11,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    else
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                          color: const Color(0xFFFEF3C7),
-                                                          borderRadius: BorderRadius.circular(6),
-                                                        ),
-                                                        child: Text(
-                                                          'Remaining: $remaining',
-                                                          style: const TextStyle(
-                                                            color: Color(0xFF92400E),
-                                                            fontWeight: FontWeight.w800,
-                                                            fontSize: 11,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    if (_i(l.approvedRejectQty) > 0)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                          color: const Color(0xFFFEE2E2),
-                                                          borderRadius: BorderRadius.circular(6),
-                                                        ),
-                                                        child: Text(
-                                                          'Rejected: ${_i(l.approvedRejectQty)}',
-                                                          style: const TextStyle(
-                                                            color: Color(0xFF991B1B),
-                                                            fontWeight: FontWeight.w800,
-                                                            fontSize: 11,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
 
-                                          // Quick Approve Shortcut (When collapsed or expanded & not fully approved)
-                                          if (!disabled && remaining > 0)
-                                            FilledButton.icon(
-                                              onPressed: busy ? null : () => _quickApproveOne(l),
-                                              icon: busy
-                                                  ? const SizedBox(
-                                                      width: 12,
-                                                      height: 12,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 1.5,
-                                                        color: Colors.white,
-                                                      ),
-                                                    )
-                                                  : const Icon(Icons.check_rounded, size: 14),
-                                              label: Text(
-                                                'Quick ($remaining)',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: const Color(0xFF059669),
-                                                foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                                minimumSize: const Size(0, 30),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                              ),
-                                            ),
-
-                                          const SizedBox(width: 6),
-                                          // Expand/Collapse Chevron
-                                          AnimatedRotation(
-                                            duration: const Duration(milliseconds: 200),
-                                            turns: isExpanded ? 0.5 : 0.0,
-                                            child: const Icon(
-                                              Icons.keyboard_arrow_down_rounded,
-                                              size: 20,
-                                              color: _ink700,
-                                            ),
-                                          ),
-                                        ],
+                      // 3. Selection & Bulk Action Bar (Direct 1-click Approve All & Reject All; selection badge only when items selected)
+                      Wrap(
+                        alignment: selectedCount > 0 ? WrapAlignment.spaceBetween : WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (selectedCount > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 14,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '$selectedCount selected',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11.5,
+                                      color: Color(0xFF1E40AF),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  InkWell(
+                                    onTap: () => setState(() => _selectedItemIds.clear()),
+                                    child: const Text(
+                                      'Clear',
+                                      style: TextStyle(
+                                        color: Color(0xFF2563EB),
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                        decoration: TextDecoration.underline,
                                       ),
                                     ),
                                   ),
+                                ],
+                              ),
+                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: _bulkBusy || !_canApproveNow ? null : _approveSelected,
+                                icon: _bulkBusy
+                                    ? const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.done_all_rounded, size: 14),
+                                label: Text(
+                                  selectedCount > 0
+                                      ? (isDesktop ? 'Approve Selected ($selectedCount)' : 'Approve ($selectedCount)')
+                                      : 'Approve All',
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF059669),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                  minimumSize: const Size(0, 32),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              TextButton.icon(
+                                onPressed: _bulkBusy || !_canApproveNow ? null : _rejectSelected,
+                                icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFC62828)),
+                                label: Text(
+                                  selectedCount > 0
+                                      ? (isDesktop ? 'Reject Selected ($selectedCount)' : 'Reject ($selectedCount)')
+                                      : 'Reject All',
+                                  style: const TextStyle(
+                                    color: Color(0xFFC62828),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFC62828),
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                                  minimumSize: const Size(0, 32),
+                                  backgroundColor: const Color(0xFFFFEBEE),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
 
-                                  // Expanded Content Area
-                                  if (isExpanded) ...[
-                                    const Divider(height: 1, color: _stroke),
-                                    Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                                        children: [
-                                          if (!disabled) ...[
-                                            Row(
+                      // 4. Items List
+                      Expanded(
+                        child: filteredLines.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Text(
+                                    _searchQuery.isNotEmpty
+                                        ? 'No items match "$_searchQuery"'
+                                        : 'No requisition items found',
+                                    style: const TextStyle(
+                                      color: _ink600,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filteredLines.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemBuilder: (_, i) {
+                                  final l = filteredLines[i];
+                                  final busy = _busyLineIds.contains(l.itemId);
+                                  final remaining = _remainApprove(l);
+                                  final isExpanded = _expandedLineIds.contains(l.itemId);
+                                  final isFullyApproved = remaining <= 0;
+                                  final disabled = busy || isFullyApproved;
+                                  final isSelected = _selectedItemIds.contains(l.itemId);
+
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: _surface,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: isExpanded
+                                            ? _accentMint.withValues(alpha: 0.8)
+                                            : (isFullyApproved
+                                                ? const Color(0xFFA5D6A7).withValues(alpha: 0.6)
+                                                : _stroke),
+                                        width: isExpanded ? 1.5 : 1,
+                                      ),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x06000000),
+                                          blurRadius: 6,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        // Item Header Bar with Checkbox
+                                        InkWell(
+                                          onTap: () {
+                                            setState(() {
+                                              if (isExpanded) {
+                                                _expandedLineIds.remove(l.itemId);
+                                              } else {
+                                                _expandedLineIds.add(l.itemId);
+                                              }
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                            color: isFullyApproved
+                                                ? const Color(0xFFE8F5E9).withValues(alpha: 0.35)
+                                                : (isExpanded
+                                                    ? _surfaceAlt.withValues(alpha: 0.45)
+                                                    : Colors.transparent),
+                                            child: Row(
                                               children: [
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      const Text(
-                                                        'Approve Qty',
-                                                        style: TextStyle(
-                                                          color: _ink700,
-                                                          fontWeight: FontWeight.w800,
-                                                          fontSize: 11,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      TextField(
-                                                        controller: _qtyCtrls[l.itemId],
-                                                        keyboardType: TextInputType.number,
-                                                        cursorColor: const Color(0xFF111827),
-                                                        style: const TextStyle(
-                                                          color: Color(0xFF111827),
-                                                          fontWeight: FontWeight.w900,
-                                                          fontSize: 15,
-                                                        ),
-                                                        decoration: InputDecoration(
-                                                          isDense: true,
-                                                          filled: true,
-                                                          fillColor: Colors.white,
-                                                          contentPadding: const EdgeInsets.symmetric(
-                                                            horizontal: 10,
-                                                            vertical: 10,
-                                                          ),
-                                                          prefixIcon: const Icon(
-                                                            Icons.check_circle_outline_rounded,
-                                                            size: 16,
-                                                            color: Color(0xFF059669),
-                                                          ),
-                                                          border: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFFD1D5DB),
-                                                              width: 1.5,
-                                                            ),
-                                                          ),
-                                                          enabledBorder: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFFD1D5DB),
-                                                              width: 1.5,
-                                                            ),
-                                                          ),
-                                                          focusedBorder: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFF10B981),
-                                                              width: 2,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
+                                                // Selection Checkbox
+                                                Checkbox(
+                                                  value: isSelected,
+                                                  activeColor: const Color(0xFF059669),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                  visualDensity: VisualDensity.compact,
+                                                  onChanged: disabled
+                                                      ? null
+                                                      : (val) {
+                                                          setState(() {
+                                                            if (val == true) {
+                                                              _selectedItemIds.add(l.itemId);
+                                                            } else {
+                                                              _selectedItemIds.remove(l.itemId);
+                                                            }
+                                                          });
+                                                        },
+                                                ),
+                                                const SizedBox(width: 4),
+
+                                                // Icon
+                                                Container(
+                                                  padding: const EdgeInsets.all(6),
+                                                  decoration: BoxDecoration(
+                                                    color: isFullyApproved
+                                                        ? const Color(0xFFE8F5E9)
+                                                        : _surfaceAlt.withValues(alpha: .6),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Icon(
+                                                    isFullyApproved
+                                                        ? Icons.check_circle_rounded
+                                                        : Icons.inventory_2_outlined,
+                                                    size: 16,
+                                                    color: isFullyApproved
+                                                        ? const Color(0xFF059669)
+                                                        : _ink900,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 10),
+                                                const SizedBox(width: 8),
+
+                                                // Item Info
                                                 Expanded(
                                                   child: Column(
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
-                                                      Row(
-                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      Text(
+                                                        l.itemName,
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          color: isFullyApproved ? _ink700 : _ink900,
+                                                          fontWeight: FontWeight.w800,
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 3),
+                                                      Wrap(
+                                                        spacing: 5,
+                                                        runSpacing: 3,
+                                                        crossAxisAlignment: WrapCrossAlignment.center,
                                                         children: [
-                                                          const Text(
-                                                            'Reject Qty',
-                                                            style: TextStyle(
-                                                              color: _ink700,
-                                                              fontWeight: FontWeight.w800,
-                                                              fontSize: 11,
+                                                          Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                            decoration: BoxDecoration(
+                                                              color: _surfaceAlt.withValues(alpha: 0.5),
+                                                              borderRadius: BorderRadius.circular(5),
+                                                            ),
+                                                            child: Text(
+                                                              'Req: ${_i(l.requestedQty)}',
+                                                              style: const TextStyle(
+                                                                color: _ink700,
+                                                                fontWeight: FontWeight.w700,
+                                                                fontSize: 10.5,
+                                                              ),
                                                             ),
                                                           ),
-                                                          if (remaining > 0)
-                                                            InkWell(
-                                                              onTap: () {
-                                                                setState(() {
-                                                                  _qtyCtrls[l.itemId]?.text = '0';
-                                                                  _rejectQtyCtrls[l.itemId]?.text = '$remaining';
-                                                                });
-                                                              },
-                                                              child: const Text(
-                                                                'Reject All',
-                                                                style: TextStyle(
-                                                                  color: Color(0xFFC62828),
+                                                          if (isFullyApproved)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFE8F5E9),
+                                                                borderRadius: BorderRadius.circular(5),
+                                                              ),
+                                                              child: Text(
+                                                                '✓ Fully Approved (${_i(l.approvedQty)})',
+                                                                style: const TextStyle(
+                                                                  color: Color(0xFF2E7D32),
                                                                   fontWeight: FontWeight.w800,
-                                                                  fontSize: 10,
+                                                                  fontSize: 10.5,
+                                                                ),
+                                                              ),
+                                                            )
+                                                          else
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFFEF3C7),
+                                                                borderRadius: BorderRadius.circular(5),
+                                                              ),
+                                                              child: Text(
+                                                                'Remaining: $remaining',
+                                                                style: const TextStyle(
+                                                                  color: Color(0xFF92400E),
+                                                                  fontWeight: FontWeight.w800,
+                                                                  fontSize: 10.5,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          if (_i(l.approvedRejectQty) > 0)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFFFEE2E2),
+                                                                borderRadius: BorderRadius.circular(5),
+                                                              ),
+                                                              child: Text(
+                                                                'Rejected: ${_i(l.approvedRejectQty)}',
+                                                                style: const TextStyle(
+                                                                  color: Color(0xFF991B1B),
+                                                                  fontWeight: FontWeight.w800,
+                                                                  fontSize: 10.5,
                                                                 ),
                                                               ),
                                                             ),
                                                         ],
                                                       ),
-                                                      const SizedBox(height: 4),
-                                                      TextField(
-                                                        controller: _rejectQtyCtrls[l.itemId],
-                                                        keyboardType: TextInputType.number,
-                                                        cursorColor: const Color(0xFF111827),
-                                                        style: const TextStyle(
-                                                          color: Color(0xFF111827),
-                                                          fontWeight: FontWeight.w900,
-                                                          fontSize: 15,
-                                                        ),
-                                                        decoration: InputDecoration(
-                                                          isDense: true,
-                                                          filled: true,
-                                                          fillColor: Colors.white,
-                                                          contentPadding: const EdgeInsets.symmetric(
-                                                            horizontal: 10,
-                                                            vertical: 10,
-                                                          ),
-                                                          prefixIcon: const Icon(
-                                                            Icons.cancel_outlined,
-                                                            size: 16,
-                                                            color: Color(0xFFDC2626),
-                                                          ),
-                                                          border: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFFD1D5DB),
-                                                              width: 1.5,
-                                                            ),
-                                                          ),
-                                                          enabledBorder: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFFD1D5DB),
-                                                              width: 1.5,
-                                                            ),
-                                                          ),
-                                                          focusedBorder: OutlineInputBorder(
-                                                            borderRadius: BorderRadius.circular(10),
-                                                            borderSide: const BorderSide(
-                                                              color: Color(0xFFDC2626),
-                                                              width: 2,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
                                                     ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+
+                                                // Expand/Collapse Chevron (Quick button removed per requirement)
+                                                AnimatedRotation(
+                                                  duration: const Duration(milliseconds: 200),
+                                                  turns: isExpanded ? 0.5 : 0.0,
+                                                  child: const Icon(
+                                                    Icons.keyboard_arrow_down_rounded,
+                                                    size: 20,
+                                                    color: _ink700,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 12),
-                                          ],
+                                          ),
+                                        ),
 
-                                          FilledButton.icon(
-                                            onPressed: disabled ? null : () => _approveOne(l),
-                                            icon: busy
-                                                ? const SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      color: _surface,
-                                                    ),
-                                                  )
-                                                : Icon(
-                                                    isLineReject
-                                                        ? Icons.cancel_rounded
-                                                        : (isFullyApproved
-                                                            ? Icons.check_circle_rounded
-                                                            : Icons.check_rounded),
-                                                    size: 18,
+                                        // Expanded Content Area
+                                        if (isExpanded) ...[
+                                          const Divider(height: 1, color: _stroke),
+                                          Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                if (!disabled) ...[
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: _buildQtyStepper(
+                                                          label: 'Approve Qty',
+                                                          controller: _qtyCtrls[l.itemId]!,
+                                                          max: remaining,
+                                                          activeColor: const Color(0xFF059669),
+                                                          onChanged: () => setState(() {}),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        child: _buildQtyStepper(
+                                                          label: 'Reject Qty',
+                                                          controller: _rejectQtyCtrls[l.itemId]!,
+                                                          max: remaining,
+                                                          activeColor: const Color(0xFFC62828),
+                                                          onChanged: () => setState(() {}),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
-                                            label: Text(
-                                              busy
-                                                  ? 'Submitting...'
-                                                  : (isFullyApproved
-                                                      ? 'Fully Approved'
-                                                      : (isLineReject
-                                                          ? 'Confirm Reject'
-                                                          : 'Confirm Approve')),
-                                            ),
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: isLineReject
-                                                  ? const Color(0xFFC62828)
-                                                  : (isFullyApproved
-                                                      ? const Color(0xFF059669)
-                                                      : _ink900),
-                                              foregroundColor: _surface,
-                                              disabledBackgroundColor: _ink900.withValues(alpha: .2),
-                                              disabledForegroundColor: _ink600,
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 11,
-                                                horizontal: 16,
-                                              ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(12),
-                                              ),
-                                              textStyle: const TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 13,
-                                              ),
+                                                  const SizedBox(height: 12),
+                                                ],
+
+                                                // Bottom Action Row: Confirm Approve & Reject side by side
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: FilledButton.icon(
+                                                        onPressed: disabled ? null : () => _approveOne(l),
+                                                        icon: busy
+                                                            ? const SizedBox(
+                                                                width: 14,
+                                                                height: 14,
+                                                                child: CircularProgressIndicator(
+                                                                  strokeWidth: 2,
+                                                                  color: Colors.white,
+                                                                ),
+                                                              )
+                                                            : const Icon(Icons.check_rounded, size: 16),
+                                                        label: Text(
+                                                          busy
+                                                              ? 'Approving...'
+                                                              : (isFullyApproved ? 'Approved' : 'Confirm Approve'),
+                                                        ),
+                                                        style: FilledButton.styleFrom(
+                                                          backgroundColor: const Color(0xFF059669),
+                                                          foregroundColor: Colors.white,
+                                                          padding: const EdgeInsets.symmetric(vertical: 9),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius: BorderRadius.circular(10),
+                                                          ),
+                                                          textStyle: const TextStyle(
+                                                            fontWeight: FontWeight.w800,
+                                                            fontSize: 12.5,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: OutlinedButton.icon(
+                                                        onPressed: disabled || remaining <= 0 ? null : () => _rejectOne(l),
+                                                        icon: busy
+                                                            ? const SizedBox(
+                                                                width: 14,
+                                                                height: 14,
+                                                                child: CircularProgressIndicator(
+                                                                  strokeWidth: 2,
+                                                                  color: Color(0xFFC62828),
+                                                                ),
+                                                              )
+                                                            : const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFC62828)),
+                                                        label: Text(
+                                                          busy ? 'Rejecting...' : 'Reject',
+                                                          style: const TextStyle(
+                                                            color: Color(0xFFC62828),
+                                                            fontWeight: FontWeight.w800,
+                                                            fontSize: 12.5,
+                                                          ),
+                                                        ),
+                                                        style: OutlinedButton.styleFrom(
+                                                          foregroundColor: const Color(0xFFC62828),
+                                                          side: const BorderSide(color: Color(0xFFFFCDD2)),
+                                                          backgroundColor: const Color(0xFFFFEBEE),
+                                                          padding: const EdgeInsets.symmetric(vertical: 9),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius: BorderRadius.circular(10),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ],
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
                       ),
                     ],
                   ),

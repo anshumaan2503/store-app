@@ -104,11 +104,17 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
     return null;
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage([ImageSource? source]) async {
+    if (source == null) {
+      _showImageSourceSheet();
+      return;
+    }
     final picker = ImagePicker();
     final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
+      source: source,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
 
     if (file == null) return;
@@ -121,6 +127,38 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
       _pickedBytes = bytes;
       _uploadedUrl = null;
     });
+  }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
+              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
+              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _removeImage() {

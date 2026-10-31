@@ -546,28 +546,30 @@ class _StockRefillRequestCreatePageState
       setState(() => _submitting = false);
 
       if (success) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: _ink900,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
-            content: Text(
-              'Added "${widget.item.itemName}" ($qty ${widget.item.unit}) to Indent Cart',
-              style: const TextStyle(fontWeight: FontWeight.w600, color: _surface),
-            ),
-            action: SnackBarAction(
-              label: 'VIEW CART',
-              textColor: _surfaceAlt,
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const IndentDraftsPage(),
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Added "${widget.item.itemName}" ($qty ${widget.item.unit}) to Indent Cart',
+                    style: const TextStyle(fontWeight: FontWeight.w600, color: _surface),
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
         );
@@ -667,11 +669,30 @@ class _StockRefillRequestCreatePageState
         final indentIdStr = res.indentNumber.isNotEmpty
             ? res.indentNumber
             : res.requestNo;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: const Color(0xFF2E7D32),
-            content: Text(
-              'Indent raised successfully for ${widget.item.itemName} ($indentIdStr)',
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Indent raised successfully for ${widget.item.itemName} ($indentIdStr)',
+                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+                  ),
+                ),
+              ],
             ),
           ),
         );

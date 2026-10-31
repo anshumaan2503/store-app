@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { IndentRaiseService } from './stock-refill-request.service';
 import {
@@ -19,6 +20,7 @@ import {
 import { JwtAuthGuard } from 'src/features/guards/jwt-auth.guard';
 import { PermissionsGuard } from 'src/features/guards/permissions.guard';
 import { Permissions } from 'src/features/guards/permissions.decorator';
+import { StoreNewItemGateway } from 'src/features/new-store/store-items/store-item/store-item.gateway';
 
 /**
  * Backward compatibility controller for existing Flutter client and legacy routes.
@@ -27,12 +29,16 @@ import { Permissions } from 'src/features/guards/permissions.decorator';
 @Controller('api/store/refill-requests')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class StockRefillRequestController {
-  constructor(private readonly service: IndentRaiseService) {}
+  constructor(
+    private readonly service: IndentRaiseService,
+    @Optional() private readonly itemGateway?: StoreNewItemGateway,
+  ) {}
 
   @Post()
   @Permissions('storeitemview', 'storrefilladd', 'storissueadd', 'storeindentraise', 'storeindentdraft')
   async create(@Body() dto: CreateStockRefillRequestDto, @Req() req: any) {
     const data = await this.service.create(dto, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: 'Stock refill request submitted successfully',
@@ -75,6 +81,7 @@ export class StockRefillRequestController {
   @Permissions('storeadmin', 'storrefillapprove', 'storreceiveapprove', 'storissueapprove')
   async triggerEodScheduler() {
     const data = await this.service.runEndOfDayAutoIndentScheduler();
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: data.msg,
@@ -134,6 +141,7 @@ export class StockRefillRequestController {
     @Req() req: any,
   ) {
     const data = await this.service.approve(id, dto, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: dto?.directStockIn
@@ -157,6 +165,7 @@ export class StockRefillRequestController {
     @Req() req: any,
   ) {
     const data = await this.service.creditStock(id, dto, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: 'Stock credited to rack and available inventory updated successfully',
@@ -181,6 +190,7 @@ export class StockRefillRequestController {
     @Req() req: any,
   ) {
     const data = await this.service.reject(id, dto, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: 'Stock refill request rejected successfully',
@@ -207,6 +217,7 @@ export class StockRefillRequestController {
     @Req() req: any,
   ) {
     const data = await this.service.updateQuantity(id, dto, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: 'Stock refill request quantity updated successfully',
@@ -227,6 +238,7 @@ export class StockRefillRequestController {
   )
   async delete(@Param('id') id: string, @Req() req: any) {
     const data = await this.service.delete(id, req.user);
+    this.itemGateway?.broadcastRefillRequestsUpdated();
     return {
       status: true,
       msg: data.msg || 'Stock refill request deleted successfully',

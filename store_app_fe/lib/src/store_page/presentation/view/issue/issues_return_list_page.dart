@@ -13,7 +13,7 @@ import '../../../controllers/store_item_issue_controller.dart';
 import '../../../controllers/store_rack_controller.dart';
 import '../../../domains/models/store_issue_model.dart';
 import '../../../domains/models/store_rack_model.dart';
-import 'qr_code_issue/qr_scanner_item_issue_page.dart';
+import '../../widgets/store_ui_state_widgets.dart';
 
 /* ---------------- Palette (matches your theme) ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -124,37 +124,6 @@ class _IssuesReturnListPageState extends ConsumerState<IssuesReturnListPage> {
               style: TextStyle(color: _ink900, fontWeight: FontWeight.w900),
             ),
           ),
-          floatingActionButton: () {
-            final hasAccess = user.appWorks.contains("storissueedit") ||
-                user.appWorks.contains("storissuereturn");
-            final w = MediaQuery.of(context).size.width;
-            final isIPadSize = w <= 768;
-
-            if (!hasAccess || !isIPadSize) return null;
-
-            return FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const QRCodeScannerIssuePage(isReturn: true),
-                  ),
-                );
-              },
-              elevation: 6,
-              backgroundColor: _ink900,
-              foregroundColor: _surface,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text(
-                'QR Return',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: _stroke),
-              ),
-            );
-          }(),
           body: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -190,10 +159,7 @@ class _IssuesReturnListPageState extends ConsumerState<IssuesReturnListPage> {
                         const SizedBox(height: 12),
                         Expanded(
                           child: issuesAv.when(
-                            loading:
-                                () => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
+                            loading: () => const StoreLoadingWidget(),
                             error: (e, _) => Center(child: Text('Error: $e')),
                             data: (paged) {
                               final rows = paged.rows;
@@ -252,13 +218,13 @@ class _SearchBarRow extends StatelessWidget {
   const _SearchBarRow({
     required this.controller,
     required this.onChanged,
-    required this.onFilter,
+    this.onFilter,
     required this.onReset,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
-  final VoidCallback onFilter;
+  final VoidCallback? onFilter;
   final VoidCallback onReset;
 
   @override
@@ -292,41 +258,19 @@ class _SearchBarRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            onPressed: onFilter,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _ink900,
-              iconColor: _ink900,
-              side: const BorderSide(color: _stroke),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: const Icon(Icons.tune_rounded, size: 18, color: _ink900),
-            label: const Text(
-              'Filter',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-          const SizedBox(width: 10),
-          OutlinedButton.icon(
+          const SizedBox(width: 8),
+          OutlinedButton(
             onPressed: onReset,
             style: OutlinedButton.styleFrom(
               foregroundColor: _ink900,
-              iconColor: _ink900,
               side: const BorderSide(color: _stroke),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              padding: const EdgeInsets.all(10),
+              minimumSize: const Size(40, 40),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            icon: const Icon(Icons.refresh_rounded, size: 18, color: _ink900),
-            label: const Text(
-              'Reset',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
+            child: const Icon(Icons.refresh_rounded, size: 18, color: _ink900),
           ),
         ],
       ),

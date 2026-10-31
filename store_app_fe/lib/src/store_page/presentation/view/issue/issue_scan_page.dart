@@ -12,7 +12,6 @@ import '../../../controllers/store_items_controller.dart';
 import '../../../controllers/store_rack_controller.dart';
 import '../../../domains/models/store_issue_model.dart';
 import '../../../domains/models/store_items_model.dart';
-import 'issue_scan_create_page.dart';
 import '../../../controllers/store_cart_controller.dart';
 
 // Palette
@@ -89,170 +88,198 @@ class _IssueByItemActionsPageState
     }).toList();
   }
 
-  void _openIssueSearchSheet() {
-    showModalBottomSheet(
+  Future<void> _openIssueSearchSheet() async {
+    _issueSearch = '';
+    final selectedId = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final filtered = _filteredIssues();
+      builder: (sheetCtx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
+          child: SizedBox(
+            height: MediaQuery.of(sheetCtx).size.height * 0.75,
+            child: StatefulBuilder(
+              builder: (context, setModalState) {
+                final filtered = _filteredIssues();
 
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 14,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 42,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.black12,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    autofocus: true,
-                    onChanged: (v) => setModalState(() => _issueSearch = v),
-                    decoration: const InputDecoration(
-                      hintText: "Search by Issue No or Item Name…",
-                      prefixIcon: Icon(Icons.search, color: _ink900),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: _stroke),
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.black12,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: _ink900),
+                      const SizedBox(height: 12),
+                      TextField(
+                        autofocus: false,
+                        onChanged: (v) => setModalState(() => _issueSearch = v),
+                        decoration: InputDecoration(
+                          hintText: "Search by Issue No or Item Name…",
+                          prefixIcon: const Icon(Icons.search, color: _ink900),
+                          suffixIcon: _issueSearch.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 20),
+                                  onPressed: () =>
+                                      setModalState(() => _issueSearch = ''),
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: _surfaceAlt.withValues(alpha: 0.3),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _stroke),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _stroke),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                const BorderSide(color: _ink900, width: 1.5),
+                          ),
+                        ),
+                        style: const TextStyle(color: _ink900),
                       ),
-                    ),
-                    style: const TextStyle(color: _ink900),
-                  ),
-                  const SizedBox(height: 12),
-                  Flexible(
-                    child:
-                        filtered.isEmpty
-                            ? const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 18),
-                              child: Text(
-                                "No issues found for this item name.",
-                                style: TextStyle(color: _ink700),
-                              ),
-                            )
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  "No issues found for this item name.",
+                                  style: TextStyle(color: _ink700),
+                                ),
+                              ) 
                             : ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: filtered.length,
-                              separatorBuilder:
-                                  (_, __) => const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final issue = filtered[index];
-                                final q = _issueSearch.trim().toLowerCase();
-                                final issMatch = issue.issNo
-                                    .toLowerCase()
-                                    .contains(q);
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                itemCount: filtered.length,
+                                separatorBuilder:
+                                    (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final issue = filtered[index];
+                                  final q = _issueSearch.trim().toLowerCase();
+                                  final issMatch = issue.issNo
+                                      .toLowerCase()
+                                      .contains(q);
 
-                                final lines =
-                                    q.isEmpty
-                                        ? issue.lines.take(3).toList()
-                                        : (issMatch
-                                            ? issue.lines.take(3).toList()
-                                            : issue.lines
-                                                .where(
-                                                  (l) => l.itemName
-                                                      .toLowerCase()
-                                                      .contains(q),
-                                                )
-                                                .take(3)
-                                                .toList());
+                                  final lines = q.isEmpty || issMatch
+                                      ? issue.lines.take(3).toList()
+                                      : issue.lines
+                                          .where(
+                                            (l) => l.itemName
+                                                .toLowerCase()
+                                                .contains(q),
+                                          )
+                                          .take(3)
+                                          .toList();
 
-                                return ListTile(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedIssueId = issue.id;
-                                    });
-                                    Navigator.pop(context);
-                                  },
-                                  title: Text(
-                                    issue.issNo,
-                                    style: const TextStyle(
-                                      color: _ink900,
-                                      fontWeight: FontWeight.w800,
+                                  return ListTile(
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        ...lines.map(
-                                          (l) => Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 4,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    l.itemName,
-                                                    style: const TextStyle(
-                                                      color: _ink900,
-                                                      fontWeight:
-                                                          FontWeight.w600,
+                                    onTap: () {
+                                      Navigator.of(sheetCtx).pop(issue.id);
+                                    },
+                                    title: Text(
+                                      issue.issNo,
+                                      style: const TextStyle(
+                                        color: _ink900,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          ...lines.map(
+                                            (l) => Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 2,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      l.itemName,
+                                                      style: const TextStyle(
+                                                        color: _ink900,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                     ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
                                                   ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Text(
-                                                  "Req:${l.requestedQty}  App:${l.approvedQty}  Iss:${l.issuedQty}",
-                                                  style: const TextStyle(
-                                                    color: _ink700,
-                                                    fontWeight: FontWeight.w600,
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    "Req:${l.requestedQty}  App:${l.approvedQty}  Iss:${l.issuedQty}",
+                                                    style: const TextStyle(
+                                                      color: _ink700,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 12,
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        if (issue.lines.length > 3)
-                                          Text(
-                                            "+${issue.lines.length - 3} more items",
-                                            style: const TextStyle(
-                                              color: _ink600,
+                                          if (issue.lines.length > 3)
+                                            Text(
+                                              "+${issue.lines.length - 3} more items",
+                                              style: const TextStyle(
+                                                color: _ink600,
+                                                fontSize: 11,
+                                              ),
                                             ),
-                                          ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.chevron_right,
-                                    color: _ink700,
-                                  ),
-                                );
-                              },
-                            ),
+                                    trailing: const Icon(
+                                      Icons.chevron_right,
+                                      color: _ink700,
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            );
-          },
+                );
+              },
+            ),
+          ),
         );
       },
     );
+
+    if (selectedId != null && mounted) {
+      setState(() {
+        _selectedIssueId = selectedId;
+      });
+    }
   }
 
   @override
@@ -261,14 +288,26 @@ class _IssueByItemActionsPageState
     final pagedUser = ref.watch(userFindOneDataStreamProvider);
 
     return pagedUser.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('User load error: $e'),
+      loading: () => const Scaffold(
+        backgroundColor: _bgTop,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: _ink900,
+            strokeWidth: 2.5,
+          ),
+        ),
+      ),
+      error: (e, _) => Scaffold(
+        backgroundColor: _bgTop,
+        body: Center(
+          child: Text('User load error: $e', style: const TextStyle(color: _ink700)),
+        ),
+      ),
       data: (user) {
         if (user == null) {
           return const Scaffold(body: Center(child: Text("User not found")));
         }
 
-        final hasAccess = user.appWorks.contains("storissueadd");
         final canViewAll = user.isSuperAdmin ||
             user.appWorks.isEmpty ||
             user.appWorks.contains("storeadmin") ||
@@ -285,40 +324,8 @@ class _IssueByItemActionsPageState
         final issuesAv = ref.watch(
           issueByIdItemAllDataStreamProvider(queryItem),
         );
-        // Better tablet detection
-        final shortest = MediaQuery.of(context).size.shortestSide;
-        final isTablet = shortest >= 600;
 
         return Scaffold(
-          floatingActionButton:
-              (!hasAccess || !isTablet)
-                  ? FloatingActionButton.extended(
-                    onPressed: () async {
-                      final result = await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => ItemPage(initialItemId: widget.itemId),
-                        ),
-                      );
-                      if (result == true && context.mounted) {
-                        Navigator.pop(context, true);
-                      }
-                    },
-                    elevation: 6,
-                    backgroundColor: _ink900,
-                    foregroundColor: _surface,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text(
-                      'Create Issue',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: _stroke),
-                    ),
-                  )
-                  : null,
           backgroundColor: _surface,
           appBar: AppBar(
             elevation: 0,
@@ -339,28 +346,40 @@ class _IssueByItemActionsPageState
               ),
             ),
             child: SafeArea(
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1100),
-                  child: Padding(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(14),
-                    child: Column(
-                      children: [
+                    child:
                         issuesAv.when(
                           loading:
                               () => const Center(
-                                child: CircularProgressIndicator(),
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: CircularProgressIndicator(
+                                    color: _ink900,
+                                    strokeWidth: 2.5,
+                                  ),
+                                ),
                               ),
-                          error: (e, _) => Center(child: Text('Error: $e')),
+                          error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: _ink700))),
                           data: (issues) {
                             _issues = issues;
 
                             return itemAv.when(
                               loading:
                                   () => const Center(
-                                    child: CircularProgressIndicator(),
+                                    child: Padding(
+                                      padding: EdgeInsets.all(24),
+                                      child: CircularProgressIndicator(
+                                        color: _ink900,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    ),
                                   ),
-                              error: (e, _) => Center(child: Text('Error: $e')),
+                              error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: _ink700))),
                               data: (item) {
                                 if (item == null) {
                                   return const Center(
@@ -469,8 +488,6 @@ class _IssueByItemActionsPageState
                             );
                           },
                         ),
-                      ],
-                    ),
                   ),
                 ),
               ),
@@ -519,171 +536,179 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
 
-    return createdByAv.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('User load error: $e'),
-      data: (user) {
-        if (user == null) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
-        }
+    final createdUser = createdByAv.asData?.value;
+    final bool hasCommon;
+    if (createdUser != null) {
+      final a =
+          (widget.user.divisionIds)
+              .map((e) => e.trim().toLowerCase())
+              .where((e) => e.isNotEmpty)
+              .toSet();
 
-        final a =
-            (widget.user.divisionIds)
-                .map((e) => e.trim().toLowerCase())
-                .where((e) => e.isNotEmpty)
-                .toSet();
+      final b =
+          (createdUser.divisionIds)
+              .map((e) => e.trim().toLowerCase())
+              .where((e) => e.isNotEmpty)
+              .toSet();
 
-        final b =
-            (user.divisionIds)
-                .map((e) => e.trim().toLowerCase())
-                .where((e) => e.isNotEmpty)
-                .toSet();
+      hasCommon = a.intersection(b).isNotEmpty;
+    } else {
+      hasCommon =
+          widget.user.isSuperAdmin ||
+          widget.user.appWorks.contains("storeadmin");
+    }
 
-        final hasCommon = a.intersection(b).isNotEmpty;
-
-        return Container(
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _accentMint, width: 1.2),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 14,
-                offset: Offset(0, 6),
-              ),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _accentMint, width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 14,
+            offset: Offset(0, 6),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.inventory_2_outlined,
-                      size: 40,
-                      color: _ink900,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.issue.issNo,
-                            style: const TextStyle(
-                              color: _ink900,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            widget.issue.reason.isEmpty
-                                ? '—'
-                                : widget.issue.reason,
-                            style: const TextStyle(
-                              color: _ink700,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                const Icon(
+                  Icons.inventory_2_outlined,
+                  size: 40,
+                  color: _ink900,
                 ),
-                const SizedBox(height: 12),
-
-                if (filteredLines.isNotEmpty) ...[
-                  _buildTableHeader(),
-                  for (final line in filteredLines) ...[
-                    _buildLineData(line),
-                    const SizedBox(height: 8),
-                  ],
-                ],
-
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    (widget.user.appWorks.contains("storissuefromstock") &&
-                            hasCommon)
-                        ? FilledButton.icon(
-                          onPressed:
-                              canIssueForThisItem
-                                  ? () async {
-                                    await showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder:
-                                          (_) => IssueSheet(
-                                            issue: widget.issue,
-                                            onChanged: widget.onChanged,
-                                          ),
-                                    );
-                                  }
-                                  : null,
-                          icon: const Icon(
-                            Icons.local_shipping_rounded,
-                            size: 18,
-                          ),
-                          label: const Text('Issue'),
-                          style: filledStyle,
-                        )
-                        : const SizedBox.shrink(),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.issue.issNo,
+                        style: const TextStyle(
+                          color: _ink900,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.issue.reason.isEmpty
+                            ? '—'
+                            : widget.issue.reason,
+                        style: const TextStyle(
+                          color: _ink700,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 12),
+
+            if (filteredLines.isNotEmpty) ...[
+              _buildTableHeader(),
+              for (final line in filteredLines) ...[
+                _buildLineData(line),
+                const SizedBox(height: 8),
+              ],
+            ],
+
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.center,
+              children: [
+                if (createdByAv.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _ink900,
+                      ),
+                    ),
+                  )
+                else if (widget.user.appWorks.contains("storissuefromstock") &&
+                    hasCommon)
+                  FilledButton.icon(
+                    onPressed:
+                        canIssueForThisItem
+                            ? () async {
+                              await showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder:
+                                    (_) => IssueSheet(
+                                      issue: widget.issue,
+                                      onChanged: widget.onChanged,
+                                    ),
+                              );
+                            }
+                            : null,
+                    icon: const Icon(
+                      Icons.local_shipping_rounded,
+                      size: 18,
+                    ),
+                    label: const Text('Issue'),
+                    style: filledStyle,
+                  )
+                else
+                  const SizedBox.shrink(),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildTableHeader() {
-    return const Row(
-      children: [
-        _TableHeaderCell('Requested'),
-        _TableHeaderCell('Approved'),
-        _TableHeaderCell('Issued'),
-        _TableHeaderCell('Returned'),
-        _TableHeaderCell('Scrap'),
-        _TableHeaderCell('Reject'),
-        _TableHeaderCell('Issue Rate'),
-      ],
+    return const IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TableHeaderCell('Requested'),
+          _TableHeaderCell('Approved'),
+          _TableHeaderCell('Issued'),
+          _TableHeaderCell('Returned'),
+          _TableHeaderCell('Scrap'),
+          _TableHeaderCell('Reject'),
+          _TableHeaderCell('Issue Rate'),
+        ],
+      ),
     );
   }
 
   Widget _buildLineData(IssueLine line) {
-    return Row(
-      children: [
-        _TableDataCell(line.requestedQty.toString()),
-        _TableDataCell(line.approvedQty.toString()),
-        _TableDataCell(line.issuedQty.toString()),
-        _TableDataCell(line.returnQty.toString()),
-        _TableDataCell(line.scrapQty.toString()),
-        _TableDataCell(
-          (_i(line.issuedRejectQty) + _i(line.approvedRejectQty)).toString(),
-        ),
-        _TableDataCell(
-          line.unitPrice > 0
-              ? '₹${line.unitPrice.toStringAsFixed(line.unitPrice % 1 == 0 ? 0 : 2)}'
-              : '-',
-        ),
-      ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TableDataCell(line.requestedQty.toString()),
+          _TableDataCell(line.approvedQty.toString()),
+          _TableDataCell(line.issuedQty.toString()),
+          _TableDataCell(line.returnQty.toString()),
+          _TableDataCell(line.scrapQty.toString()),
+          _TableDataCell(
+            (_i(line.issuedRejectQty) + _i(line.approvedRejectQty)).toString(),
+          ),
+          _TableDataCell(
+            line.unitPrice > 0
+                ? '₹${line.unitPrice.toStringAsFixed(line.unitPrice % 1 == 0 ? 0 : 2)}'
+                : '-',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -697,17 +722,19 @@ class _TableHeaderCell extends StatelessWidget {
     return Expanded(
       flex: 1,
       child: Container(
-        padding: const EdgeInsets.all(8),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
         decoration: BoxDecoration(
           color: _surfaceAlt,
           border: Border.all(color: _stroke),
         ),
         child: Text(
           text,
+          textAlign: TextAlign.center,
           style: const TextStyle(
             fontWeight: FontWeight.w700,
             color: _ink900,
-            fontSize: 14,
+            fontSize: 11,
           ),
         ),
       ),
@@ -724,9 +751,14 @@ class _TableDataCell extends StatelessWidget {
     return Expanded(
       flex: 1,
       child: Container(
-        padding: const EdgeInsets.all(8),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         decoration: BoxDecoration(border: Border.all(color: _stroke)),
-        child: Text(text, style: const TextStyle(color: _ink700)),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: _ink700, fontSize: 13),
+        ),
       ),
     );
   }
@@ -1102,16 +1134,17 @@ class _IssueSheetState extends ConsumerState<IssueSheet> {
                                 border: Border.all(color: const Color(0xFF86EFAC)),
                               ),
                               child: const Row(
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.history_toggle_off_rounded, size: 13, color: Color(0xFF15803D)),
                                   SizedBox(width: 5),
-                                  Text(
-                                    'Store Rule: Old stock will be issued first automatically',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF166534),
+                                  Expanded(
+                                    child: Text(
+                                      'Store Rule: Old stock will be issued first automatically',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF166534),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1363,7 +1396,12 @@ class _RackSelectionDialogState extends ConsumerState<RackSelectionDialog> {
       title: const Text('Select Scrap Rack'),
       content: SizedBox(
         child: racksAv.when(
-          loading: () => const LinearProgressIndicator(minHeight: 2),
+          loading: () => const SizedBox(
+            height: 80,
+            child: Center(
+              child: CircularProgressIndicator(strokeWidth: 2, color: _ink900),
+            ),
+          ),
           error: (e, _) => Text('Rack load error: $e'),
           data: (racks) {
             final list = (racks ?? <Map<String, dynamic>>[]);
@@ -1451,7 +1489,12 @@ class _RackByItemSelectionDialogState
       content: SizedBox(
         width: 520,
         child: racksAv.when(
-          loading: () => const LinearProgressIndicator(minHeight: 2),
+          loading: () => const SizedBox(
+            height: 80,
+            child: Center(
+              child: CircularProgressIndicator(strokeWidth: 2, color: _ink900),
+            ),
+          ),
           error: (e, _) => Text('Rack load error: $e'),
           data: (racks) {
             final list = racks;

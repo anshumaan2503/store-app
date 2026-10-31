@@ -68,31 +68,39 @@ class ItemPagedQuery {
 }
 
 final itemAllPagedStreamProvider =
-    StreamProvider.autoDispose<List<StoreItemsModel>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<StoreItemsModel>> roomStream = StreamController(
-        sync: true,
-      );
-      List<StoreItemsModel> returnValue = [];
-      socketManager.getSocket().emit("store:findRealAllItemPaged", {});
-      socketManager.getSocket().on("store:findRealAllItemPaged", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(StoreItemsModel.fromMap(element));
+    StreamProvider.autoDispose<List<StoreItemsModel>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<StoreItemsModel>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = data
+              .whereType<Map>()
+              .map((e) => StoreItemsModel.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (e) {
+          debugPrint('store:findRealAllItemPaged handler error: $e');
         }
-        roomStream.add(returnValue);
+      }
+
+      socket.on('store:findRealAllItemPaged', handler);
+      socket.emit('store:findRealAllItemPaged', {});
+
+      ref.onDispose(() {
+        socket.off('store:findRealAllItemPaged', handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in roomStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final itemPagedStreamProvider = StreamProvider.autoDispose
     .family<ItemPagedResult, ItemPagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<ItemPagedResult>();
+      Timer? timeoutTimer;
 
       int asInt(dynamic v, int fallback) {
         if (v is int) return v;
@@ -101,6 +109,8 @@ final itemPagedStreamProvider = StreamProvider.autoDispose
       }
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is! Map) return;
 
@@ -111,14 +121,16 @@ final itemPagedStreamProvider = StreamProvider.autoDispose
                 return StoreItemsModel.fromMap(m);
               }).toList();
 
-          ctrl.add(
-            ItemPagedResult(
-              rows: list,
-              total: asInt(data['total'], list.length),
-              page: asInt(data['page'], q.page),
-              limit: asInt(data['limit'], q.limit),
-            ),
-          );
+          if (!ctrl.isClosed) {
+            ctrl.add(
+              ItemPagedResult(
+                rows: list,
+                total: asInt(data['total'], list.length),
+                page: asInt(data['page'], q.page),
+                limit: asInt(data['limit'], q.limit),
+              ),
+            );
+          }
         } catch (e, st) {
           debugPrint('store:findAllItemPaged handler error: $e\n$st');
         }
@@ -127,12 +139,17 @@ final itemPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllItemPaged', handler);
       socket.emit('store:findAllItemPaged', q.toJson());
 
-      // prevent infinite loading
-      ctrl.add(
-        ItemPagedResult(rows: const [], total: 0, page: q.page, limit: q.limit),
-      );
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            ItemPagedResult(rows: const [], total: 0, page: q.page, limit: q.limit),
+          );
+        }
+      });
 
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllItemPaged', handler);
         ctrl.close();
       });
@@ -144,6 +161,7 @@ final itemScrapPagedStreamProvider = StreamProvider.autoDispose
     .family<ItemPagedResult, ItemPagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<ItemPagedResult>();
+      Timer? timeoutTimer;
 
       int asInt(dynamic v, int fallback) {
         if (v is int) return v;
@@ -152,6 +170,8 @@ final itemScrapPagedStreamProvider = StreamProvider.autoDispose
       }
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is! Map) return;
 
@@ -162,14 +182,16 @@ final itemScrapPagedStreamProvider = StreamProvider.autoDispose
                 return StoreItemsModel.fromMap(m);
               }).toList();
 
-          ctrl.add(
-            ItemPagedResult(
-              rows: list,
-              total: asInt(data['total'], list.length),
-              page: asInt(data['page'], q.page),
-              limit: asInt(data['limit'], q.limit),
-            ),
-          );
+          if (!ctrl.isClosed) {
+            ctrl.add(
+              ItemPagedResult(
+                rows: list,
+                total: asInt(data['total'], list.length),
+                page: asInt(data['page'], q.page),
+                limit: asInt(data['limit'], q.limit),
+              ),
+            );
+          }
         } catch (e, st) {
           debugPrint('store:findScrapAllItemPaged handler error: $e\n$st');
         }
@@ -178,12 +200,17 @@ final itemScrapPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findScrapAllItemPaged', handler);
       socket.emit('store:findScrapAllItemPaged', q.toJson());
 
-      // prevent infinite loading
-      ctrl.add(
-        ItemPagedResult(rows: const [], total: 0, page: q.page, limit: q.limit),
-      );
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            ItemPagedResult(rows: const [], total: 0, page: q.page, limit: q.limit),
+          );
+        }
+      });
 
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findScrapAllItemPaged', handler);
         ctrl.close();
       });
@@ -361,8 +388,11 @@ final sameItemRacksStreamProvider = StreamProvider.autoDispose
     .family<List<StoreRack>, String>((ref, itemId) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<List<StoreRack>>(sync: true);
+      Timer? timer;
 
       void handler(dynamic data) {
+        timer?.cancel();
+        timer = null;
         try {
           List rawList = const [];
 
@@ -386,7 +416,7 @@ final sameItemRacksStreamProvider = StreamProvider.autoDispose
                   .map((e) => StoreRack.fromMap(Map<String, dynamic>.from(e)))
                   .toList();
 
-          ctrl.add(racks);
+          if (!ctrl.isClosed) ctrl.add(racks);
         } catch (e, st) {
           debugPrint('store:sameItemRacks handler error: $e\n$st');
         }
@@ -396,10 +426,13 @@ final sameItemRacksStreamProvider = StreamProvider.autoDispose
       socket.on('store:sameItemRacks:res', handler);
       socket.emit('store:sameItemRacks:req', {"itemId": itemId});
 
-      // prevent infinite loading
-      ctrl.add(const <StoreRack>[]);
+      // Fallback timer
+      timer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) ctrl.add(const <StoreRack>[]);
+      });
 
       ref.onDispose(() {
+        timer?.cancel();
         socket.off('store:sameItemRacks:res', handler);
         ctrl.close();
       });
@@ -618,16 +651,19 @@ final rackItemStreamProvider = StreamProvider.autoDispose
     .family<StoreItemsModel?, String>((ref, rackId) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<StoreItemsModel?>();
+      Timer? timer;
 
       void handler(dynamic data) {
+        timer?.cancel();
+        timer = null;
         try {
           if (data == null) {
-            ctrl.add(null);
+            if (!ctrl.isClosed) ctrl.add(null);
             return;
           }
           if (data is Map) {
             final m = Map<String, dynamic>.from(data);
-            ctrl.add(StoreItemsModel.fromMap(m));
+            if (!ctrl.isClosed) ctrl.add(StoreItemsModel.fromMap(m));
           }
         } catch (e) {
           debugPrint('store:rackItem handler error: $e');
@@ -637,9 +673,12 @@ final rackItemStreamProvider = StreamProvider.autoDispose
       socket.on('store:rackItem', handler);
       socket.emit('store:rackItem', {"rackId": rackId});
 
-      ctrl.add(null);
+      timer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) ctrl.add(null);
+      });
 
       ref.onDispose(() {
+        timer?.cancel();
         socket.off('store:rackItem', handler);
         ctrl.close();
       });
@@ -684,16 +723,19 @@ final findOneRackStreamProvider = StreamProvider.autoDispose
     .family<StoreRack?, String>((ref, rackId) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<StoreRack?>();
+      Timer? timer;
 
       void handler(dynamic data) {
+        timer?.cancel();
+        timer = null;
         try {
           if (data == null) {
-            ctrl.add(null);
+            if (!ctrl.isClosed) ctrl.add(null);
             return;
           }
           if (data is Map) {
             final m = Map<String, dynamic>.from(data);
-            ctrl.add(StoreRack.fromMap(m));
+            if (!ctrl.isClosed) ctrl.add(StoreRack.fromMap(m));
           }
         } catch (e) {
           debugPrint('store:rackItem handler error: $e');
@@ -703,9 +745,12 @@ final findOneRackStreamProvider = StreamProvider.autoDispose
       socket.on('store:findOneRack', handler);
       socket.emit('store:findOneRack', {"rackId": rackId});
 
-      ctrl.add(null);
+      timer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) ctrl.add(null);
+      });
 
       ref.onDispose(() {
+        timer?.cancel();
         socket.off('store:findOneRack', handler);
         ctrl.close();
       });

@@ -1031,13 +1031,13 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
       error: (e, _) => Center(child: Text('Room load error: $e')),
       data: (user) {
         return avAll.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const StoreLoadingWidget(),
           error: (e, _) => Center(child: Text('Error: $e')),
           data: (rec) {
             final receive = rec;
 
             return av.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const StoreLoadingWidget(),
               error:
                   (e, _) => StoreErrorView(
                     error: e,
@@ -1054,47 +1054,6 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                     ref.watch(pendingRefillRequestsCountProvider).value ?? 0;
 
                 return Scaffold(
-                  floatingActionButton: () {
-                    if (_selectedTab != 0) return null;
-
-                    final hasAccess = user?.isSuperAdmin == true ||
-                        (user?.appWorks.contains("storreceiveadd") ?? false) ||
-                        (user?.appWorks.any((w) => w.startsWith("storreceive")) ?? false) ||
-                        (user?.appWorks.isEmpty ?? true);
-
-                    final w = MediaQuery.of(context).size.width;
-                    final isTabletOrPhone = w <= 768;
-
-                    if (!hasAccess || !isTabletOrPhone) return null;
-
-                    return FloatingActionButton.extended(
-                      key: GuidedTourController.receiveStockActionKey,
-                      onPressed: () async {
-                        final res = await Navigator.push<bool>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const QRCodeScannerRackPage(),
-                          ),
-                        );
-                        if (res == true || mounted) {
-                          ref.invalidate(receivePagedStreamProvider(_query));
-                          ref.invalidate(findAllReceiveDataStreamProvider);
-                        }
-                      },
-                      elevation: 6,
-                      backgroundColor: _ink900,
-                      foregroundColor: _surface,
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text(
-                        'QR Receive',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: _stroke),
-                      ),
-                    );
-                  }(),
                   body: Container(
                     color: Colors.white,
                     child: SafeArea(
@@ -1306,6 +1265,8 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                           onPressed: () {
                                             ref.invalidate(receivePagedStreamProvider(_query));
                                             ref.invalidate(findAllReceiveDataStreamProvider);
+                                              ref.invalidate(refillRequestsListProvider);
+                                              ref.invalidate(pendingRefillRequestsCountProvider);
                                           },
                                           icon: const Icon(
                                             Icons.refresh_rounded,
@@ -1348,8 +1309,9 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                               ref.invalidate(
                                                   receivePagedStreamProvider(
                                                       _query));
-                                              ref.invalidate(
-                                                  findAllReceiveDataStreamProvider);
+                                              ref.invalidate(findAllReceiveDataStreamProvider);
+                                              ref.invalidate(refillRequestsListProvider);
+                                              ref.invalidate(pendingRefillRequestsCountProvider);
                                             }
                                           },
                                           icon: const Icon(
@@ -1375,6 +1337,8 @@ class _ReceivePagedListPageState extends ConsumerState<ReceivePagedListPage> {
                                     onRefresh: () async {
                                       ref.invalidate(receivePagedStreamProvider(_query));
                                       ref.invalidate(findAllReceiveDataStreamProvider);
+                                              ref.invalidate(refillRequestsListProvider);
+                                              ref.invalidate(pendingRefillRequestsCountProvider);
                                     },
                                     child: rows.isEmpty
                                         ? ListView(

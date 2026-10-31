@@ -58,6 +58,7 @@ final scrapPagedStreamProvider = StreamProvider.autoDispose
     .family<ScrapPagedResult, ScrapPagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<ScrapPagedResult>();
+      Timer? timeoutTimer;
 
       int asInt(dynamic v, int fallback) {
         if (v is int) return v;
@@ -66,6 +67,8 @@ final scrapPagedStreamProvider = StreamProvider.autoDispose
       }
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is! Map) return;
 
@@ -76,14 +79,16 @@ final scrapPagedStreamProvider = StreamProvider.autoDispose
                 return m;
               }).toList();
 
-          ctrl.add(
-            ScrapPagedResult(
-              rows: list,
-              total: asInt(data['total'], list.length),
-              page: asInt(data['page'], q.page),
-              limit: asInt(data['limit'], q.limit),
-            ),
-          );
+          if (!ctrl.isClosed) {
+            ctrl.add(
+              ScrapPagedResult(
+                rows: list,
+                total: asInt(data['total'], list.length),
+                page: asInt(data['page'], q.page),
+                limit: asInt(data['limit'], q.limit),
+              ),
+            );
+          }
         } catch (e, st) {
           debugPrint('store:findAllScrapPaged handler error: $e\n$st');
         }
@@ -92,17 +97,22 @@ final scrapPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllScrapPaged', handler);
       socket.emit('store:findAllScrapPaged', q.toJson());
 
-      // prevent infinite loading
-      ctrl.add(
-        ScrapPagedResult(
-          rows: const [],
-          total: 0,
-          page: q.page,
-          limit: q.limit,
-        ),
-      );
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            ScrapPagedResult(
+              rows: const [],
+              total: 0,
+              page: q.page,
+              limit: q.limit,
+            ),
+          );
+        }
+      });
 
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllScrapPaged', handler);
         ctrl.close();
       });

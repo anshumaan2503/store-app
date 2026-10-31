@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../auth/controllers/users_controller.dart';
+import '../../../../components/socket_manager.dart';
 import '../../../controllers/stock_refill_request_controller.dart';
 import '../../../controllers/store_items_controller.dart';
 import '../../../controllers/store_receive_controller.dart';
@@ -46,9 +49,54 @@ class _StockRefillRequestsListViewState
   String _sourceFilter = 'ALL'; // 'ALL' | 'AUTO' | 'REQUESTER'
   bool _isExecutingEod = false;
 
+  Timer? _debounceTimer;
+  final List<String> _subscribedEvents = const [
+    'store:refillRequests:updated',
+    'store:findAllReceivePaged',
+    'store:findAllReceive',
+    'store:grn:approved',
+    'store:findAllStoreItemFilter',
+    'store:findRealAllItemPaged',
+  ];
+
+  void _onLiveUpdate([dynamic _]) {
+    if (!mounted) return;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      ref.invalidate(refillRequestsListProvider);
+      ref.invalidate(pendingRefillRequestsCountProvider);
+    });
+  }
+
+  void _setupSocketListeners() {
+    try {
+      final socket = ref.read(socketProvider).getSocket();
+      for (final event in _subscribedEvents) {
+        socket.on(event, _onLiveUpdate);
+      }
+    } catch (e) {
+      debugPrint('[StockRefillRequestsListView] Error setting up socket listeners: $e');
+    }
+  }
+
+  void _cleanupSocketListeners() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    try {
+      final socket = ref.read(socketProvider).getSocket();
+      for (final event in _subscribedEvents) {
+        socket.off(event, _onLiveUpdate);
+      }
+    } catch (e) {
+      debugPrint('[StockRefillRequestsListView] Error cleaning up socket listeners: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _setupSocketListeners();
     if (widget.initialStatusFilter != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(refillRequestFilterStatusProvider.notifier).state =
@@ -87,7 +135,7 @@ class _StockRefillRequestsListViewState
             ),
             title: const Row(
               children: [
-                Icon(Icons.nightlight_round, color: Color(0xFF512DA8), size: 24),
+                Icon(Icons.nightlight_round, color: _ink900, size: 24),
                 SizedBox(width: 8),
                 Text(
                   'End-of-Day Auto-Indent',
@@ -117,7 +165,7 @@ class _StockRefillRequestsListViewState
               if (count > 0)
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF1565C0),
+                    backgroundColor: _ink900,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -153,6 +201,7 @@ class _StockRefillRequestsListViewState
 
   @override
   void dispose() {
+    _cleanupSocketListeners();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -205,7 +254,7 @@ class _StockRefillRequestsListViewState
                           : Icons.add_shopping_cart_rounded,
                       color: isPending
                           ? const Color(0xFFE65100)
-                          : const Color(0xFF1565C0),
+                          : _ink900,
                       size: 22,
                     ),
                   ),
@@ -427,7 +476,7 @@ class _StockRefillRequestsListViewState
                                       ? 'Indent quantity updated to $newQty ${req.unitOfMeasure}'
                                       : 'Quantity amended to $newQty ${req.unitOfMeasure}. Moved to Approver review.',
                                 ),
-                                backgroundColor: const Color(0xFF2E7D32),
+                                backgroundColor: _ink900,
                               ),
                             );
                           } else {
@@ -444,7 +493,7 @@ class _StockRefillRequestsListViewState
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isPending
                         ? const Color(0xFFE65100)
-                        : const Color(0xFF1565C0),
+                        : _ink900,
                     foregroundColor: Colors.white,
                     elevation: 1,
                     shape: RoundedRectangleBorder(
@@ -520,8 +569,7 @@ class _StockRefillRequestsListViewState
                   const Divider(color: _stroke),
                   Expanded(
                     child: grnAsync.when(
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
+                      loading: () => const StoreLoadingWidget(),
                       error: (err, _) =>
                           Center(child: Text('Error loading GRNs: $err')),
                       data: (grnList) {
@@ -978,236 +1026,7 @@ class _StockRefillRequestsListViewState
     }
   }
 
-  Future<void> _showCreditStockDialog(StockRefillRequestModel req) async {
-    final remarksController = TextEditingController();
-    final qtyController = TextEditingController(
-      text: '${req.indentQty > 0 ? req.indentQty : 1}',
-    );
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          backgroundColor: _surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: _stroke),
-          ),
-          title: const Row(
-            children: [
-              Icon(
-                Icons.inventory_2_rounded,
-                color: Color(0xFF2E7D32),
-                size: 24,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Receive Stock into Inventory',
-                style: TextStyle(
-                  color: _ink900,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Directly credit physical inventory for ${req.itemDescription} (${req.indentNumber.isNotEmpty ? req.indentNumber : req.requestNo}).',
-                  style: const TextStyle(
-                    color: _ink700,
-                    fontSize: 13.5,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFA5D6A7)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Approved Quantity:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1B5E20),
-                            ),
-                          ),
-                          Text(
-                            '+${req.indentQty} ${req.unitOfMeasure}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF2E7D32),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Current Available Stock:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _ink600,
-                            ),
-                          ),
-                          Text(
-                            '${req.balanceQty} ${req.unitOfMeasure}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: _ink900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Quantity to Receive',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: _ink700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: qtyController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  style: const TextStyle(
-                    color: _ink900,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: const Color(0xFFFAF8F0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: _stroke),
-                    ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Remarks (Optional)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: _ink700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: remarksController,
-                  maxLines: 2,
-                  style: const TextStyle(
-                    color: _ink900,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Physical stock placed into warehouse rack',
-                    hintStyle: const TextStyle(
-                      color: _ink600,
-                      fontSize: 13,
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFFAF8F0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: _stroke),
-                    ),
-                    contentPadding: const EdgeInsets.all(10),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogCtx, false),
-              child: const Text('Cancel', style: TextStyle(color: _ink600)),
-            ),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(dialogCtx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2E7D32),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              ),
-              icon: const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
-              label: const Text(
-                'Confirm & Credit Stock',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true) {
-      final qty = num.tryParse(qtyController.text.trim()) ?? req.indentQty;
-      final ok = await ref
-          .read(stockRefillRequestControllerProvider.notifier)
-          .creditStock(
-            req.id,
-            creditQty: qty,
-            reviewRemarks: remarksController.text.trim(),
-          );
-
-      if (!mounted) return;
-      if (ok) {
-        ref.invalidate(itemFindOneStreamProvider(req.itemId));
-        ref.invalidate(itemPagedStreamProvider);
-        ref.invalidate(findAllReceiveDataStreamProvider);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF2E7D32),
-            content: Text(
-              'Stock credited successfully! Added +$qty ${req.unitOfMeasure} for ${req.itemDescription}. Available count updated.',
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFC62828),
-            content: Text('Failed to credit stock for indent.'),
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _confirmDeleteRequest(StockRefillRequestModel req) async {
     final indentLabel =
@@ -1337,7 +1156,7 @@ class _StockRefillRequestsListViewState
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF2E7D32),
+          backgroundColor: _ink900,
           content: Text('$indentLabel deleted successfully'),
         ),
       );
@@ -1373,6 +1192,13 @@ class _StockRefillRequestsListViewState
     final canShowGrn = canReceive &&
         !widget.isSubmittedIndentsSection &&
         ref.watch(storeCartConfigProvider).grnWorkflowEnabled;
+
+    ref.listen<StoreCartConfig>(storeCartConfigProvider, (prev, next) {
+      if (prev?.grnWorkflowEnabled != next.grnWorkflowEnabled) {
+        ref.invalidate(refillRequestsListProvider);
+        ref.invalidate(pendingRefillRequestsCountProvider);
+      }
+    });
 
     final isMobile = MediaQuery.of(context).size.width < 768;
 
@@ -1425,10 +1251,12 @@ class _StockRefillRequestsListViewState
                     if (!isMobile) ...[
                       if (canApprove && !widget.isSubmittedIndentsSection) ...[
                         const SizedBox(width: 4),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF1565C0),
-                            foregroundColor: Colors.white,
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: _surfaceAlt,
+                            foregroundColor: _ink900,
+                            iconColor: _ink900,
+                            side: const BorderSide(color: _stroke),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
@@ -1443,17 +1271,19 @@ class _StockRefillRequestsListViewState
                               ),
                             );
                           },
-                          icon: const Icon(Icons.hub_outlined, size: 15, color: Colors.white),
+                          icon: const Icon(Icons.hub_outlined, size: 15, color: _ink900),
                           label: Text(
                             'Store Consolidation (${ref.watch(pendingStoreConsolidationCountProvider).value ?? 0})',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink900),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF512DA8),
-                            foregroundColor: Colors.white,
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: _surfaceAlt,
+                            foregroundColor: _ink900,
+                            iconColor: _ink900,
+                            side: const BorderSide(color: _stroke),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
@@ -1463,12 +1293,12 @@ class _StockRefillRequestsListViewState
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _ink900),
                                 )
-                              : const Icon(Icons.nightlight_round, size: 15, color: Colors.white),
+                              : const Icon(Icons.nightlight_round, size: 15, color: _ink900),
                           label: const Text(
                             'Run EOD Scheduler',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink900),
                           ),
                         ),
                       ],
@@ -1476,17 +1306,23 @@ class _StockRefillRequestsListViewState
                         const SizedBox(width: 4),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF2E7D32),
+                            backgroundColor: _ink900,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            iconColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
                           ),
-                          onPressed: () => showGrnCartSheet(context),
+                          onPressed: () async {
+                            await showGrnCartSheet(context);
+                            if (!mounted) return;
+                            ref.invalidate(refillRequestsListProvider);
+                            ref.invalidate(pendingRefillRequestsCountProvider);
+                          },
                           icon: const Icon(Icons.assignment_turned_in_outlined, size: 15, color: Colors.white),
                           label: Text(
                             'GRN Cart (${ref.watch(grnCartProvider).length})',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white),
                           ),
                         ),
                       ],
@@ -1500,10 +1336,12 @@ class _StockRefillRequestsListViewState
                     runSpacing: 8,
                     children: [
                       if (canApprove && !widget.isSubmittedIndentsSection) ...[
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF1565C0),
-                            foregroundColor: Colors.white,
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: _surfaceAlt,
+                            foregroundColor: _ink900,
+                            iconColor: _ink900,
+                            side: const BorderSide(color: _stroke),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
@@ -1518,16 +1356,18 @@ class _StockRefillRequestsListViewState
                               ),
                             );
                           },
-                          icon: const Icon(Icons.hub_outlined, size: 15, color: Colors.white),
+                          icon: const Icon(Icons.hub_outlined, size: 15, color: _ink900),
                           label: Text(
                             'Store Consolidation (${ref.watch(pendingStoreConsolidationCountProvider).value ?? 0})',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink900),
                           ),
                         ),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF512DA8),
-                            foregroundColor: Colors.white,
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: _surfaceAlt,
+                            foregroundColor: _ink900,
+                            iconColor: _ink900,
+                            side: const BorderSide(color: _stroke),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
@@ -1537,29 +1377,35 @@ class _StockRefillRequestsListViewState
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _ink900),
                                 )
-                              : const Icon(Icons.nightlight_round, size: 15, color: Colors.white),
+                              : const Icon(Icons.nightlight_round, size: 15, color: _ink900),
                           label: const Text(
                             'Run EOD Scheduler',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _ink900),
                           ),
                         ),
                       ],
                       if (canShowGrn) ...[
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF2E7D32),
+                            backgroundColor: _ink900,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            iconColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
                           ),
-                          onPressed: () => showGrnCartSheet(context),
+                          onPressed: () async {
+                            await showGrnCartSheet(context);
+                            if (!mounted) return;
+                            ref.invalidate(refillRequestsListProvider);
+                            ref.invalidate(pendingRefillRequestsCountProvider);
+                          },
                           icon: const Icon(Icons.assignment_turned_in_outlined, size: 15, color: Colors.white),
                           label: Text(
                             'GRN Cart (${ref.watch(grnCartProvider).length})',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white),
                           ),
                         ),
                       ],
@@ -1625,7 +1471,7 @@ class _StockRefillRequestsListViewState
         // Requests List
         Expanded(
           child: requestsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const StoreLoadingWidget(),
             error: (err, _) => StoreErrorView(
               error: err,
               onRetry: () => ref.invalidate(refillRequestsListProvider),
@@ -1703,6 +1549,7 @@ class _StockRefillRequestsListViewState
                         req,
                         canApprove,
                         canShowGrn,
+                        canReceive,
                       );
                     },
                   ),
@@ -1743,14 +1590,7 @@ class _StockRefillRequestsListViewState
 
   Widget _buildSourceChip(String value, String label) {
     final isSelected = _sourceFilter == value;
-    Color activeColor;
-    if (value == 'AUTO') {
-      activeColor = const Color(0xFF5E35B1);
-    } else if (value == 'REQUESTER') {
-      activeColor = const Color(0xFF1565C0);
-    } else {
-      activeColor = _ink900;
-    }
+    const activeColor = _ink900;
 
     return FilterChip(
       label: Text(label),
@@ -1783,7 +1623,13 @@ class _StockRefillRequestsListViewState
     StockRefillRequestModel req,
     bool canApprove,
     bool canShowGrn,
+    bool canReceive,
   ) {
+    final isGrnWorkflow = ref.watch(storeCartConfigProvider).grnWorkflowEnabled;
+    final effectiveCanShowGrn = canReceive && !widget.isSubmittedIndentsSection && isGrnWorkflow;
+    final isGrnApproved = req.timeline.any((t) => t.action == 'GRN_APPROVED');
+    final isGrnPending = req.timeline.any((t) => t.action == 'ADDED_TO_GRN') && !isGrnApproved;
+
     Color statusBg;
     Color statusFg;
     IconData statusIcon;
@@ -1920,9 +1766,9 @@ class _StockRefillRequestsListViewState
                             vertical: 2.5,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE3F2FD),
+                            color: _surfaceAlt,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFBBDEFB)),
+                            border: Border.all(color: _stroke),
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1930,7 +1776,7 @@ class _StockRefillRequestsListViewState
                               Icon(
                                 Icons.storefront_rounded,
                                 size: 11,
-                                color: Color(0xFF1565C0),
+                                color: _ink700,
                               ),
                               SizedBox(width: 3.5),
                               Text(
@@ -1938,7 +1784,7 @@ class _StockRefillRequestsListViewState
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF1565C0),
+                                  color: _ink900,
                                   letterSpacing: 0.3,
                                 ),
                               ),
@@ -2240,23 +2086,10 @@ class _StockRefillRequestsListViewState
             ),
             const SizedBox(height: 6),
 
-            // Reason / Justification
-            if (req.reason.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _surfaceAlt.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Reason: ${req.reason}',
-                  style: const TextStyle(
-                    color: _ink700,
-                    fontSize: 11.5,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
+            // Reason / Justification (Dynamic & Expandable)
+            if (req.reason.trim().isNotEmpty)
+              StoreDynamicReasonBox(
+                reason: req.reason,
               ),
 
             // Origin Routing Banner
@@ -2447,7 +2280,7 @@ class _StockRefillRequestsListViewState
                       ElevatedButton.icon(
                         onPressed: () => _showApprovalDialog(req, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D32),
+                          backgroundColor: _ink900,
                           foregroundColor: Colors.white,
                           iconColor: Colors.white,
                           elevation: 1,
@@ -2483,9 +2316,9 @@ class _StockRefillRequestsListViewState
                       onPressed: () =>
                           showIndentLifecycleTimelineSheet(context, indent: req),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF2563EB),
-                        iconColor: const Color(0xFF2563EB),
-                        side: const BorderSide(color: Color(0xFFBFDBFE)),
+                        foregroundColor: _ink700,
+                        iconColor: _ink700,
+                        side: const BorderSide(color: _stroke),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2494,7 +2327,7 @@ class _StockRefillRequestsListViewState
                           vertical: 8,
                         ),
                       ),
-                      icon: const Icon(Icons.timeline_rounded, size: 16, color: Color(0xFF2563EB)),
+                      icon: const Icon(Icons.timeline_rounded, size: 16, color: _ink700),
                       label: const Text(
                         'Timeline',
                         style: TextStyle(fontWeight: FontWeight.w800),
@@ -2503,9 +2336,9 @@ class _StockRefillRequestsListViewState
                     OutlinedButton.icon(
                       onPressed: () => _showEditQtyDialog(req),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1565C0),
-                        iconColor: const Color(0xFF1565C0),
-                        side: const BorderSide(color: Color(0xFF90CAF9)),
+                        foregroundColor: _ink700,
+                        iconColor: _ink700,
+                        side: const BorderSide(color: _stroke),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2514,7 +2347,7 @@ class _StockRefillRequestsListViewState
                           vertical: 8,
                         ),
                       ),
-                      icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF1565C0)),
+                      icon: const Icon(Icons.edit_note_rounded, size: 16, color: _ink700),
                       label: const Text(
                         'Amend / Increase',
                         style: TextStyle(fontWeight: FontWeight.w800),
@@ -2540,19 +2373,27 @@ class _StockRefillRequestsListViewState
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    if (canShowGrn) ...[
-                      if (req.timeline.any((t) => t.action == 'GRN_APPROVED'))
+                    if (canReceive && !widget.isSubmittedIndentsSection) ...[
+                      if (!effectiveCanShowGrn || isGrnApproved) ...[
                         ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
+                          onPressed: () async {
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const QRCodeScannerRackPage(),
+                                builder: (_) => QRCodeScannerRackPage(
+                                  initialItemId: req.itemId,
+                                  initialIndentId: req.id,
+                                  initialIndentQty: req.indentQty,
+                                ),
                               ),
                             );
+                            if (!mounted) return;
+                            ref.invalidate(refillRequestsListProvider);
+                            ref.invalidate(pendingRefillRequestsCountProvider);
+                            ref.invalidate(uncreditedApprovedIndentsProvider(req.itemId));
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1B5E20),
+                            backgroundColor: _ink900,
                             foregroundColor: Colors.white,
                             iconColor: Colors.white,
                             elevation: 2,
@@ -2569,86 +2410,119 @@ class _StockRefillRequestsListViewState
                             'Scan Rack Putaway',
                             style: TextStyle(fontWeight: FontWeight.w800),
                           ),
-                        )
-                      else if (ref.watch(grnCartProvider).containsKey(req.id))
-                        OutlinedButton.icon(
-                          onPressed: () => showGrnCartSheet(context),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF2E7D32),
-                            iconColor: const Color(0xFF2E7D32),
-                            side: const BorderSide(color: Color(0xFF81C784)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                          icon: const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF2E7D32)),
-                          label: const Text(
-                            'In GRN Cart',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        )
-                      else
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            ref.read(grnCartProvider.notifier).addIndent(req);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${req.itemName.isNotEmpty ? req.itemName : req.itemDescription} added to GRN Cart',
-                                ),
-                                action: SnackBarAction(
-                                  label: 'Open Cart',
-                                  onPressed: () => showGrnCartSheet(context),
-                                ),
+                        ),
+                      ] else ...[
+                        if (ref.watch(grnCartProvider).containsKey(req.id))
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await showGrnCartSheet(context);
+                              if (!mounted) return;
+                              ref.invalidate(refillRequestsListProvider);
+                              ref.invalidate(pendingRefillRequestsCountProvider);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _ink900,
+                              iconColor: _ink900,
+                              backgroundColor: _surfaceAlt.withValues(alpha: 0.6),
+                              side: const BorderSide(color: _stroke, width: 1.2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2E7D32),
-                            foregroundColor: Colors.white,
-                            iconColor: Colors.white,
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
+                            icon: const Icon(Icons.check_circle_rounded, size: 16, color: _ink900),
+                            label: const Text(
+                              'In GRN Cart',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          )
+                        else if (isGrnPending)
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await showGrnCartSheet(context);
+                              if (!mounted) return;
+                              ref.invalidate(refillRequestsListProvider);
+                              ref.invalidate(pendingRefillRequestsCountProvider);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _ink700,
+                              iconColor: _ink700,
+                              backgroundColor: _surfaceAlt.withValues(alpha: 0.4),
+                              side: const BorderSide(color: _stroke),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            icon: const Icon(Icons.hourglass_top_rounded, size: 16, color: _ink700),
+                            label: const Text(
+                              'GRN Approval Pending',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              ref.read(grnCartProvider.notifier).addIndent(req);
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  duration: const Duration(seconds: 2),
+                                  backgroundColor: _ink900,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  content: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.check_circle_outline_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '${req.itemName.isNotEmpty ? req.itemName : req.itemDescription} added to GRN Cart',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _surfaceAlt,
+                              foregroundColor: _ink900,
+                              iconColor: _ink900,
+                              elevation: 0,
+                              side: const BorderSide(color: _stroke),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                            ),
+                            icon: const Icon(Icons.add_shopping_cart_rounded, size: 16, color: _ink900),
+                            label: const Text(
+                              'Add to GRN',
+                              style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ),
-                          icon: const Icon(Icons.add_shopping_cart_rounded, size: 16, color: Colors.white),
-                          label: const Text(
-                            'Add to GRN',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
+                      ],
                     ],
-                    if (canApprove && !ref.watch(storeCartConfigProvider).grnWorkflowEnabled)
-                      ElevatedButton.icon(
-                        onPressed: () => _showCreditStockDialog(req),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1B5E20),
-                          foregroundColor: Colors.white,
-                          iconColor: Colors.white,
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                        ),
-                        icon: const Icon(Icons.add_business_rounded, size: 18, color: Colors.white),
-                        label: Text(
-                          'Receive Stock (+${req.indentQty} ${req.unitOfMeasure})',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -2687,9 +2561,9 @@ class _StockRefillRequestsListViewState
                       onPressed: () =>
                           showIndentLifecycleTimelineSheet(context, indent: req),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF2563EB),
-                        iconColor: const Color(0xFF2563EB),
-                        side: const BorderSide(color: Color(0xFFBFDBFE)),
+                        foregroundColor: _ink700,
+                        iconColor: _ink700,
+                        side: const BorderSide(color: _stroke),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2698,7 +2572,7 @@ class _StockRefillRequestsListViewState
                           vertical: 6,
                         ),
                       ),
-                      icon: const Icon(Icons.timeline_rounded, size: 15, color: Color(0xFF2563EB)),
+                      icon: const Icon(Icons.timeline_rounded, size: 15, color: _ink700),
                       label: const Text(
                         'View Timeline',
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),

@@ -153,6 +153,10 @@ class _StoreCartPageState extends ConsumerState<StoreCartPage> {
         };
         final ctrl = ref.read(issueControllerProvider);
         issueResult = await ctrl.createDraft(dto);
+        if (issueResult == null) {
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
       }
 
       String? indentNo;
@@ -189,7 +193,13 @@ class _StoreCartPageState extends ConsumerState<StoreCartPage> {
       }
 
       ref.read(guidedTourControllerProvider).requestSection('items');
-      Navigator.of(context).pop(true);
+      if (mounted) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+        } else if (Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop(true);
+        }
+      }
     } catch (e) {
       _showSnack('Failed to submit request: $e', isError: true);
     } finally {

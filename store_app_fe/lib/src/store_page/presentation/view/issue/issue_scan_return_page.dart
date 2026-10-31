@@ -254,8 +254,21 @@ class _IssueByItemReturnActionsPageState
     final userAv = ref.watch(userFindOneDataStreamProvider);
 
     return userAv.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('User load error: $e'),
+      loading: () => const Scaffold(
+        backgroundColor: _bgTop,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: _ink900,
+            strokeWidth: 2.5,
+          ),
+        ),
+      ),
+      error: (e, _) => Scaffold(
+        backgroundColor: _bgTop,
+        body: Center(
+          child: Text('User load error: $e', style: const TextStyle(color: _ink700)),
+        ),
+      ),
       data: (user) {
         if (user == null) {
           return const Scaffold(body: Center(child: Text("User not found")));
@@ -333,7 +346,8 @@ class _IssueByItemReturnActionsPageState
               ),
             ),
             child: SafeArea(
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1100),
                   child: Padding(
@@ -1371,7 +1385,12 @@ class _RackByItemSelectionDialogState
       content: SizedBox(
         width: 520,
         child: racksAv.when(
-          loading: () => const LinearProgressIndicator(minHeight: 2),
+          loading: () => const SizedBox(
+            height: 80,
+            child: Center(
+              child: CircularProgressIndicator(strokeWidth: 2, color: _ink900),
+            ),
+          ),
           error: (e, _) => Text('Rack load error: $e'),
           data: (racks) {
             final list = racks ?? <Map<String, dynamic>>[];

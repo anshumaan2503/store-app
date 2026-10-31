@@ -1615,10 +1615,10 @@ class _ItemActivityBreakdownSheetState
                                 ),
                               ),
                               if (isMe) ...[
-                                const SizedBox(width: 5),
+                                const SizedBox(width: 4),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 4.5, vertical: 1),
+                                      horizontal: 4, vertical: 1),
                                   decoration: BoxDecoration(
                                     color: primaryColor,
                                     borderRadius: BorderRadius.circular(4),
@@ -1626,42 +1626,45 @@ class _ItemActivityBreakdownSheetState
                                   child: const Text(
                                     'YOU',
                                     style: TextStyle(
-                                      fontSize: 8.5,
+                                      fontSize: 8,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
                                   ),
                                 ),
                               ],
-                              const SizedBox(width: 6),
-                              // Status Chip
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: bgColor,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: borderColor),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(statusIcon,
-                                        size: 9.5, color: primaryColor),
-                                    const SizedBox(width: 3),
-                                    Flexible(
-                                      child: Text(
-                                        statusLabel,
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                          color: primaryColor,
+                              const SizedBox(width: 5),
+                              // Status Chip (Flexible so it never overflows)
+                              Flexible(
+                                fit: FlexFit.loose,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: bgColor,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: borderColor),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(statusIcon,
+                                          size: 9, color: primaryColor),
+                                      const SizedBox(width: 3),
+                                      Flexible(
+                                        child: Text(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: primaryColor,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1669,47 +1672,66 @@ class _ItemActivityBreakdownSheetState
                           const SizedBox(height: 3),
                           Row(
                             children: [
-                              // Department Pill
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF3F4F6),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: _stroke),
-                                ),
+                              Expanded(
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(
-                                      Icons.business_center_outlined,
-                                      size: 9.5,
-                                      color: _ink700,
-                                    ),
-                                    const SizedBox(width: 3.5),
-                                    Text(
-                                      dept,
-                                      style: const TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: _ink700,
+                                    // Department Pill
+                                    Flexible(
+                                      fit: FlexFit.loose,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF3F4F6),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: _stroke),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.business_center_outlined,
+                                              size: 9,
+                                              color: _ink700,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Flexible(
+                                              child: Text(
+                                                dept,
+                                                style: const TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: _ink700,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
+                                    if (issNo.isNotEmpty) ...[
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        fit: FlexFit.loose,
+                                        child: Text(
+                                          '#$issNo',
+                                          style: const TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: _ink600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
-                              if (issNo.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                Text(
-                                  '#$issNo',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: _ink600,
-                                  ),
-                                ),
-                              ],
-                              const Spacer(),
+                              const SizedBox(width: 4),
                               // Time / Relative
                               Text(
                                 _formatTimeAgo(data['revertedAt'] ??
@@ -1719,7 +1741,7 @@ class _ItemActivityBreakdownSheetState
                                     data['createdAt'] ??
                                     data['addedAt']),
                                 style: const TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 9.5,
                                   color: _ink600,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -1849,21 +1871,30 @@ class _ItemActivityBreakdownSheetState
                       const Icon(Icons.timeline_rounded,
                           size: 14, color: _ink700),
                       const SizedBox(width: 5),
-                      const Text(
-                        'Request Lifecycle Timeline',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          color: _ink900,
+                      const Flexible(
+                        child: Text(
+                          'Request Lifecycle Timeline',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: _ink900,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        'Dept: $dept',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _ink600,
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Dept: $dept',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: _ink600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
                         ),
                       ),
                     ],
@@ -2527,12 +2558,17 @@ class _ItemActivityBreakdownSheetState
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        dateTimeText,
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: isCompleted ? iconColor : _ink500,
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: Text(
+                          dateTimeText,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: isCompleted ? iconColor : _ink500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],

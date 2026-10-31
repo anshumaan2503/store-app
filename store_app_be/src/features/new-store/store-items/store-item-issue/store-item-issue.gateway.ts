@@ -19,6 +19,9 @@ export class IssueGateway implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    // Sync existing issue statuses to fix any legacy unissued records
+    this.s.syncExistingIssueStatuses().catch(() => {});
+
     // Background auto-revert worker (runs every 30 seconds)
     setInterval(async () => {
       try {
@@ -55,6 +58,15 @@ export class IssueGateway implements OnModuleInit {
     // console.log(data);
 
     client.emit('store:issueByIdItem', data);
+  }
+
+  @SubscribeMessage('store:issuesByRackId')
+  async issuesByRackId(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: any,
+  ) {
+    const data = await this.s.findIssuesByRackId(body);
+    client.emit('store:issuesByRackId', data);
   }
 
   @SubscribeMessage('store:issue:itemBreakdown')

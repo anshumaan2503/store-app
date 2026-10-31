@@ -23,16 +23,19 @@ const _stroke = Color(0xFFDFE1D6);
 const _accentMint = Color(0xFFB6D3CC);
 const _bgTop = Color(0xFFFFFFF3);
 const _bgBottom = _surfaceAlt;
-const _accentPeach = Color(0xFFF3D7C0);
 
 class ScanRackReceivePage extends ConsumerStatefulWidget {
   final String rackId;
   final String? initialItemId;
+  final String? initialIndentId;
+  final num? initialIndentQty;
 
   const ScanRackReceivePage({
     super.key,
     required this.rackId,
     this.initialItemId,
+    this.initialIndentId,
+    this.initialIndentQty,
   });
 
   @override
@@ -42,7 +45,6 @@ class ScanRackReceivePage extends ConsumerStatefulWidget {
 
 class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
   late StoreRack _rack;
-  late StoreItemsModel _item;
 
   bool _busy = false;
   final TextEditingController _rackQtyCtrl = TextEditingController();
@@ -64,6 +66,13 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
     if (widget.initialItemId != null && widget.initialItemId!.isNotEmpty) {
       _selectedItemId = widget.initialItemId;
     }
+    if (widget.initialIndentId != null && widget.initialIndentId!.isNotEmpty) {
+      _selectedIndentId = widget.initialIndentId;
+    }
+    if (widget.initialIndentQty != null && widget.initialIndentQty! > 0) {
+      final q = widget.initialIndentQty!;
+      _rackQtyCtrl.text = q is int ? '$q' : (q % 1 == 0 ? '${q.toInt()}' : '$q');
+    }
 
     _rack = StoreRack(
       id: '',
@@ -75,23 +84,6 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
       isScrap: false,
     );
 
-    _item = StoreItemsModel(
-      id: "",
-      itemCode: "",
-      isScrap: false,
-      itemName: "",
-      rackId: [],
-      categoryLabel: "",
-      unit: "",
-      description: "",
-      totalStockQuantity: 0,
-      stockAvailableQuantity: 0,
-      stockIssueQuantity: 0,
-      stockissueCompleted: 0,
-      stockscrapQuantity: 0,
-      imageUrl: "",
-      maxCapacity: 0,
-    );
   }
 
   @override
@@ -105,6 +97,11 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
   void _refresh() {
     ref.invalidate(findOneRackStreamProvider(widget.rackId));
     ref.invalidate(rackItemListStreamProvider(widget.rackId));
+    ref.invalidate(refillRequestsListProvider);
+    ref.invalidate(pendingRefillRequestsCountProvider);
+    if (_selectedItemId != null && _selectedItemId!.isNotEmpty) {
+      ref.invalidate(uncreditedApprovedIndentsProvider(_selectedItemId!));
+    }
   }
 
   void _snack(String msg) {
@@ -124,11 +121,17 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
     return null;
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage([ImageSource? source]) async {
+    if (source == null) {
+      _showImageSourceSheet();
+      return;
+    }
     final picker = ImagePicker();
     final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
+      source: source,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
 
     if (file == null) return;
@@ -142,6 +145,38 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
       _uploadedUrl = null;
       _imageUrlCtrl.clear();
     });
+  }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
+              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
+              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _removePickedImage() {
@@ -193,7 +228,14 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
     required String itemId,
     required TextEditingController qtyCtrl,
   }) async {
-    final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
+    final isGrnEnabled = ref.read(storeCartConfigProvider).grnWorkflowEnabled;
+    int qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
+    if (qty <= 0 && widget.initialIndentQty != null && widget.initialIndentQty! > 0) {
+      qty = widget.initialIndentQty!.toInt();
+      qtyCtrl.text = '$qty';
+    } else if (!isGrnEnabled && qty <= 0) {
+      qty = 1;
+    }
     if (qty <= 0) {
       _snack('Enter valid quantity (>0)');
       return;
@@ -259,6 +301,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
   }
 
   Widget _buildIndentSelector(String itemId) {
+    final isInitialIndentBound = widget.initialIndentId != null && widget.initialIndentId!.isNotEmpty;
     final indentsAv = ref.watch(uncreditedApprovedIndentsProvider(itemId));
 
     return indentsAv.when(
@@ -284,7 +327,20 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
       ),
       error: (_, __) => const SizedBox.shrink(),
       data: (indents) {
-        if (indents.isEmpty) {
+        if (_selectedIndentId != null && (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0')) {
+          final matched = indents.where((x) => x.id == _selectedIndentId).toList();
+          if (matched.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0')) {
+                setState(() {
+                  _rackQtyCtrl.text = '${matched.first.indentQty}';
+                  _directToAvailable = !matched.first.isIssueShortage;
+                });
+              }
+            });
+          }
+        }
+        if (indents.isEmpty && !isInitialIndentBound) {
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -339,19 +395,19 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                         : _ink700,
                   ),
                   const SizedBox(width: 6),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Against Indent Request (Optional)',
+                      isInitialIndentBound ? 'Approved Indent Request' : 'Against Indent Request (Optional)',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 12.5,
                         color: _ink900,
                       ),
                     ),
                   ),
-                  if (_selectedIndentId != null)
+                  if (_selectedIndentId != null && !isInitialIndentBound)
                     TextButton(
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
@@ -361,6 +417,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                         setState(() {
                           _selectedIndentId = null;
                           _directToAvailable = true;
+                          _rackQtyCtrl.clear();
                         });
                       },
                       child: const Text(
@@ -375,88 +432,174 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                 ],
               ),
               const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                key: ValueKey(_selectedIndentId),
-                isExpanded: true,
-                initialValue: _selectedIndentId,
-                dropdownColor: Colors.white,
-                style: const TextStyle(
-                  color: _ink900,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-                hint: const Text(
-                  'Select approved indent (Origin determines destination)',
-                  style: TextStyle(fontSize: 11.5, color: _ink600),
-                ),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _stroke),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _stroke),
-                  ),
-                ),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text(
-                      'None (General Direct In ➔ Available Stock)',
-                      style: TextStyle(fontSize: 12, color: _ink600),
-                    ),
-                  ),
-                  ...indents.map((ind) {
-                    final reqName =
-                        ind.requestedBy.isNotEmpty ? ind.requestedBy : 'Requester';
-                    final numStr = ind.indentNumber.isNotEmpty
-                        ? ind.indentNumber
-                        : ind.requestNo;
-                    final originTag = ind.isIssueShortage
-                        ? '🟠 SHORTAGE ($reqName) ➔ Reserved'
-                        : (ind.isAutoRefill
-                            ? '🟣 AUTO REFILL ➔ Available'
-                            : '🟢 STORE REFILL ➔ Available');
-                    return DropdownMenuItem<String>(
-                      value: ind.id,
-                      child: Text(
-                        '$numStr • Qty: ${ind.indentQty} • $originTag',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _ink900,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+              if (isInitialIndentBound) ...[
+                Builder(
+                  builder: (_) {
+                    final matched = indents.where((x) => x.id == _selectedIndentId).toList();
+                    final selectedIndent = matched.isNotEmpty ? matched.first : null;
+                    final reqName = (selectedIndent?.requestedBy.isNotEmpty == true)
+                        ? selectedIndent!.requestedBy
+                        : 'Requester';
+                    final numStr = selectedIndent != null
+                        ? (selectedIndent.indentNumber.isNotEmpty
+                            ? selectedIndent.indentNumber
+                            : selectedIndent.requestNo)
+                        : (_selectedIndentId ?? '');
+                    final originTag = selectedIndent != null
+                        ? (selectedIndent.isIssueShortage
+                            ? 'SHORTAGE ($reqName) ➔ Reserved'
+                            : (selectedIndent.isAutoRefill
+                                ? 'AUTO REFILL ➔ Available'
+                                : 'STORE REFILL ➔ Available'))
+                        : 'STORE REFILL ➔ Available';
+                    final qVal = selectedIndent?.indentQty ?? widget.initialIndentQty;
+                    final qLabel = qVal != null
+                        ? (qVal is int ? '$qVal' : (qVal % 1 == 0 ? '${qVal.toInt()}' : '$qVal'))
+                        : '';
+
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _stroke),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  numStr,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: _ink900,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  originTag,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: _ink700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (qLabel.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFA5D6A7)),
+                              ),
+                              child: Text(
+                                'Qty: $qLabel',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2E7D32),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     );
-                  }),
-                ],
-                onChanged: (val) {
-                  setState(() {
-                    _selectedIndentId = val;
-                    if (val != null) {
-                      final matched =
-                          indents.where((x) => x.id == val).toList();
-                      if (matched.isNotEmpty) {
-                        _rackQtyCtrl.text = '${matched.first.indentQty}';
-                        // 🌟 Locked System Routing:
-                        // Issue demand shortage -> Reserved for requester
-                        // Store refill or Auto refill -> Available Stock
-                        _directToAvailable = !matched.first.isIssueShortage;
+                  },
+                ),
+              ] else ...[
+                DropdownButtonFormField<String>(
+                  key: ValueKey(_selectedIndentId),
+                  isExpanded: true,
+                  initialValue: _selectedIndentId,
+                  dropdownColor: Colors.white,
+                  style: const TextStyle(
+                    color: _ink900,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  hint: const Text(
+                    'Select approved indent (Origin determines destination)',
+                    style: TextStyle(fontSize: 11.5, color: _ink600),
+                  ),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: _stroke),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: _stroke),
+                    ),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text(
+                        'None (General Direct In ➔ Available Stock)',
+                        style: TextStyle(fontSize: 12, color: _ink600),
+                      ),
+                    ),
+                    ...indents.map((ind) {
+                      final reqName =
+                          ind.requestedBy.isNotEmpty ? ind.requestedBy : 'Requester';
+                      final numStr = ind.indentNumber.isNotEmpty
+                          ? ind.indentNumber
+                          : ind.requestNo;
+                      final originTag = ind.isIssueShortage
+                          ? '🟠 SHORTAGE ($reqName) ➔ Reserved'
+                          : (ind.isAutoRefill
+                              ? '🟣 AUTO REFILL ➔ Available'
+                              : '🟢 STORE REFILL ➔ Available');
+                      return DropdownMenuItem<String>(
+                        value: ind.id,
+                        child: Text(
+                          '$numStr • Qty: ${ind.indentQty} • $originTag',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _ink900,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedIndentId = val;
+                      if (val != null) {
+                        final matched =
+                            indents.where((x) => x.id == val).toList();
+                        if (matched.isNotEmpty) {
+                          final q = matched.first.indentQty;
+                          _rackQtyCtrl.text = q is int ? '$q' : (q % 1 == 0 ? '${q.toInt()}' : '$q');
+                          // 🌟 Locked System Routing:
+                          // Issue demand shortage -> Reserved for requester
+                          // Store refill or Auto refill -> Available Stock
+                          _directToAvailable = !matched.first.isIssueShortage;
+                        }
+                      } else {
+                        _directToAvailable = true;
+                        _rackQtyCtrl.clear();
                       }
-                    } else {
-                      _directToAvailable = true;
-                    }
-                  });
-                },
-              ),
+                    });
+                  },
+                ),
+              ],
               if (_selectedIndentId != null) ...[
                 Builder(
                   builder: (_) {
@@ -843,18 +986,20 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
             error: (e, _) => Center(child: Text('Error loading rack data: $e')),
             data: (rackData) {
               _rack = rackData!;
+              final isGrnEnabled = ref.watch(storeCartConfigProvider).grnWorkflowEnabled;
 
               final rackItemsAv = ref.watch(
                 rackItemListStreamProvider(widget.rackId),
               );
 
+              final isItemFixed = widget.initialItemId != null && widget.initialItemId!.isNotEmpty;
               final rackItems = rackItemsAv.value ?? <StoreItemsModel>[];
 
               if (rackItemsAv.isLoading && rackItems.isEmpty) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              if (rackItems.isEmpty) {
+              if (rackItems.isEmpty && !isItemFixed) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -938,11 +1083,13 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                 if (sel != null) displayList.insert(0, sel);
               }
 
-              final selectedItem = _selectedItemFrom(rackItems);
+              final fallbackItem = isItemFixed
+                  ? ref.watch(itemFindOneStreamProvider(widget.initialItemId!)).asData?.value
+                  : null;
+              final selectedItem = _selectedItemFrom(rackItems) ?? fallbackItem;
               final itemReady = selectedItem != null;
 
               if (selectedItem != null) {
-                _item = selectedItem;
               }
 
               return Column(
@@ -952,8 +1099,9 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                   _InfoRow(label: 'Room', value: _rack.roomName),
                   _InfoRow(label: 'Remark', value: _rack.remark),
                   const SizedBox(height: 12),
-                  // Search box for quick filtering
-                  TextField(
+                  if (!isItemFixed) ...[
+                    // Search box for quick filtering
+                    TextField(
                     style: const TextStyle(
                       color: _ink900,
                       fontSize: 13,
@@ -1006,7 +1154,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: _selectedItemId,
+                    initialValue: _selectedItemId,
                     isExpanded: true,
                     dropdownColor: _surfaceAlt,
                     itemHeight: 52,
@@ -1112,9 +1260,6 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                     onChanged: (v) {
                       setState(() {
                         _selectedItemId = v;
-                        final hit =
-                            rackItems.where((x) => x.id == v).toList();
-                        if (hit.isNotEmpty) _item = hit.first;
                       });
                     },
                   ),
@@ -1130,11 +1275,12 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                         ),
                       ),
                     ),
-                  const SizedBox(height: 12),
-                          if (itemReady) ...[
+                    const SizedBox(height: 12),
+                  ],
+                  if (itemReady) ...[
                             _InfoRow(
                               label: 'Item Name',
-                              value: selectedItem!.itemName,
+                              value: selectedItem.itemName,
                             ),
                             _InfoRow(
                               label: 'Item Code',
@@ -1150,206 +1296,239 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                             ),
                             const SizedBox(height: 12),
                             _buildIndentSelector(selectedItem.id),
-                            const SizedBox(height: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 6,
-                                      child: Row(
+                            if (isGrnEnabled) ...[
+                              const SizedBox(height: 8),
+                              Builder(
+                                builder: (context) {
+                                  final isQuantityLocked = (_selectedIndentId != null && _selectedIndentId!.isNotEmpty) ||
+                                      (widget.initialIndentId != null && widget.initialIndentId!.isNotEmpty);
+
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
                                         children: [
-                                          const Text(
-                                            'Receive Quantity',
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: _ink900,
+                                          Expanded(
+                                            flex: 6,
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  'Receive Quantity',
+                                                  style: TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: _ink900,
+                                                  ),
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  '*',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w900,
+                                                    color: Color(0xFFC62828),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
-                                          const Text(
-                                            '*',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w900,
-                                              color: Color(0xFFC62828),
+                                          SizedBox(width: 8),
+                                          Expanded(
+                                            flex: 5,
+                                            child: Text(
+                                              'Purchase Rate',
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: _ink900,
+                                              ),
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      flex: 5,
-                                      child: const Text(
-                                        'Purchase Rate',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: _ink900,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 6,
-                                      child: TextField(
-                                        controller: _rackQtyCtrl,
-                                        keyboardType: TextInputType.number,
-                                        cursorColor: _ink900,
-                                        style: const TextStyle(
-                                          color: _ink900,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14.5,
-                                        ),
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
-                                          prefixIcon: const Icon(
-                                            Icons.add_shopping_cart_rounded,
-                                            color: Color(0xFF2E7D32),
-                                            size: 19,
-                                          ),
-                                          prefixIconConstraints: const BoxConstraints(
-                                            minWidth: 38,
-                                            minHeight: 38,
-                                          ),
-                                          hintText: 'Qty (e.g. 10)',
-                                          hintStyle: const TextStyle(
-                                            color: _ink600,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          labelText: 'Quantity',
-                                          labelStyle: const TextStyle(
-                                            color: _ink700,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          floatingLabelStyle: const TextStyle(
-                                            color: Color(0xFF1B5E20),
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: _stroke, width: 1.2),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: _stroke, width: 1.2),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(
-                                              color: Color(0xFF2E7D32),
-                                              width: 1.8,
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 6,
+                                            child: TextField(
+                                              controller: _rackQtyCtrl,
+                                              readOnly: isQuantityLocked,
+                                              showCursor: !isQuantityLocked,
+                                              enableInteractiveSelection: !isQuantityLocked,
+                                              keyboardType: TextInputType.number,
+                                              cursorColor: _ink900,
+                                              style: const TextStyle(
+                                                color: _ink900,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14.5,
+                                              ),
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                contentPadding: const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 12,
+                                                ),
+                                                prefixIcon: const Icon(
+                                                  Icons.add_shopping_cart_rounded,
+                                                  color: _ink900,
+                                                  size: 19,
+                                                ),
+                                                prefixIconConstraints: const BoxConstraints(
+                                                  minWidth: 38,
+                                                  minHeight: 38,
+                                                ),
+                                                hintText: 'Qty (e.g. 10)',
+                                                hintStyle: const TextStyle(
+                                                  color: _ink600,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                labelText: 'Quantity',
+                                                labelStyle: const TextStyle(
+                                                  color: _ink700,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                floatingLabelStyle: const TextStyle(
+                                                  color: _ink900,
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(color: _stroke, width: 1.2),
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(color: _stroke, width: 1.2),
+                                                ),
+                                                focusedBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(
+                                                    color: _ink900,
+                                                    width: 1.8,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      flex: 5,
-                                      child: TextField(
-                                        controller: _unitPriceCtrl,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        cursorColor: _ink900,
-                                        style: const TextStyle(
-                                          color: _ink900,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14.5,
-                                        ),
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
-                                          prefixText: '₹ ',
-                                          prefixStyle: const TextStyle(
-                                            color: _ink900,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 14,
-                                          ),
-                                          hintText: 'Rate / pc',
-                                          hintStyle: const TextStyle(
-                                            color: _ink600,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          labelText: 'Purchase Rate',
-                                          labelStyle: const TextStyle(
-                                            color: _ink700,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          floatingLabelStyle: const TextStyle(
-                                            color: Color(0xFF1B5E20),
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: _stroke, width: 1.2),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: _stroke, width: 1.2),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(
-                                              color: Color(0xFF2E7D32),
-                                              width: 1.8,
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            flex: 5,
+                                            child: TextField(
+                                              controller: _unitPriceCtrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              cursorColor: _ink900,
+                                              style: const TextStyle(
+                                                color: _ink900,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14.5,
+                                              ),
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                contentPadding: const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 12,
+                                                ),
+                                                prefixText: '₹ ',
+                                                prefixStyle: const TextStyle(
+                                                  color: _ink900,
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14,
+                                                ),
+                                                hintText: 'Rate / pc',
+                                                hintStyle: const TextStyle(
+                                                  color: _ink600,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                labelText: 'Purchase Rate',
+                                                labelStyle: const TextStyle(
+                                                  color: _ink700,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                floatingLabelStyle: const TextStyle(
+                                                  color: _ink900,
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(color: _stroke, width: 1.2),
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(color: _stroke, width: 1.2),
+                                                ),
+                                                focusedBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  borderSide: const BorderSide(
+                                                    color: _ink900,
+                                                    width: 1.8,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             _buildImagePicker(),
                             const SizedBox(height: 12),
-                            FilledButton.icon(
-                              onPressed:
-                                  (_busy || !itemReady)
-                                      ? null
-                                      : () => _confirmReceiveItem(
-                                        itemId: selectedItem.id,
-                                        qtyCtrl: _rackQtyCtrl,
-                                      ),
-                              icon:
-                                  _busy
-                                      ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _ink900,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: _ink900.withValues(alpha: 0.35),
+                                  disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  elevation: 1,
+                                ),
+                                onPressed:
+                                    (_busy || !itemReady)
+                                        ? null
+                                        : () => _confirmReceiveItem(
+                                          itemId: selectedItem.id,
+                                          qtyCtrl: _rackQtyCtrl,
                                         ),
-                                      )
-                                      : const Icon(Icons.check_rounded),
-                              label: Text(
-                                _busy
-                                    ? 'Adding...'
-                                    : (itemReady ? 'Add Item' : 'Select Item'),
+                                icon:
+                                    _busy
+                                        ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                        : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                                label: Text(
+                                  _busy
+                                      ? 'Adding...'
+                                      : (itemReady ? 'Add Item' : 'Select Item'),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
                               ),
                             ),
                 const SizedBox(height: 12),

@@ -590,7 +590,7 @@ class _ConsolidatedIndentAccordionCardState
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
             icon: const Icon(Icons.close_rounded, size: 16),
-            label: const Text('Reject Indent', style: TextStyle(fontWeight: FontWeight.w800)),
+            label: const Text('Reject All Indents', style: TextStyle(fontWeight: FontWeight.w800)),
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -940,7 +940,7 @@ class _ConsolidatedIndentAccordionCardState
                                       onPressed: _isSubmitting ? null : () => _showRejectWholeIndentDialog(ref),
                                       icon: const Icon(Icons.close_rounded, size: 15),
                                       label: Text(
-                                        'Reject Indent',
+                                        'Reject All Indents',
                                         style: TextStyle(
                                           fontSize: isNarrow ? 11.5 : 12,
                                           fontWeight: FontWeight.w700,
@@ -952,6 +952,8 @@ class _ConsolidatedIndentAccordionCardState
                                         style: FilledButton.styleFrom(
                                         backgroundColor: _ink900,
                                         foregroundColor: _surface,
+                              disabledBackgroundColor: const Color(0xFFE0E0E0),
+                              disabledForegroundColor: const Color(0xFF9E9E9E),
                                         padding: EdgeInsets.symmetric(
                                           horizontal: isNarrow ? 10 : 14,
                                           vertical: 8,
@@ -1179,6 +1181,7 @@ class _ConsolidatedIndentItemRowState
   late TextEditingController _qtyController;
   late num _approvedQty;
   bool _isApproving = false;
+  bool _isReasonExpanded = false;
 
   ConsolidatedIndentItemModel get item => widget.item;
 
@@ -1544,6 +1547,7 @@ class _ConsolidatedIndentItemRowState
     final canApprove = user?.canIndentApprove ?? false;
     final canReject = user?.canIndentReject ?? false;
     final isApproved = item.isApproved;
+    final isNarrow = MediaQuery.of(context).size.width < 500;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1775,10 +1779,12 @@ class _ConsolidatedIndentItemRowState
                           controller: _qtyController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w800,
-                            color: _ink900,
+                            color: _approvedQty <= 0
+                                ? const Color(0xFFC62828)
+                                : _ink900,
                           ),
                           decoration: InputDecoration(
                             isDense: true,
@@ -1788,14 +1794,37 @@ class _ConsolidatedIndentItemRowState
                             fillColor: _surface,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(6),
-                              borderSide: const BorderSide(color: _stroke),
+                              borderSide: BorderSide(
+                                color: _approvedQty <= 0
+                                    ? const Color(0xFFEF9A9A)
+                                    : _stroke,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(
+                                color: _approvedQty <= 0
+                                    ? const Color(0xFFEF9A9A)
+                                    : _stroke,
+                                width: _approvedQty <= 0 ? 1.4 : 1.0,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(
+                                color: _approvedQty <= 0
+                                    ? const Color(0xFFC62828)
+                                    : _ink900,
+                                width: 1.6,
+                              ),
                             ),
                           ),
                           onChanged: (val) {
-                            final n = num.tryParse(val);
-                            if (n != null && n > 0) {
-                              setState(() => _approvedQty = n);
-                            }
+                            final trimmed = val.trim();
+                            final n = num.tryParse(trimmed);
+                            setState(() {
+                              _approvedQty = (n != null && n > 0) ? n : 0;
+                            });
                           },
                         ),
                       ),
@@ -1807,7 +1836,7 @@ class _ConsolidatedIndentItemRowState
                             size: 18, color: _ink700),
                         onPressed: () {
                           setState(() {
-                            _approvedQty += 1;
+                            _approvedQty = (_approvedQty <= 0) ? 1 : (_approvedQty + 1);
                             _qtyController.text = _approvedQty.toString();
                           });
                         },
@@ -1834,17 +1863,18 @@ class _ConsolidatedIndentItemRowState
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFFC62828),
                           side: const BorderSide(color: Color(0xFFEF9A9A)),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isNarrow ? 8 : 10, vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         onPressed: _isApproving ? null : () => _showRejectItemDialog(),
                         icon: const Icon(Icons.close_rounded, size: 14),
-                        label: const Text(
+                        label: Text(
                           'Reject',
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: isNarrow ? 11 : 11.5,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1854,14 +1884,18 @@ class _ConsolidatedIndentItemRowState
                             style: FilledButton.styleFrom(
                               backgroundColor: _ink900,
                               foregroundColor: _surface,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
+                              disabledBackgroundColor: const Color(0xFFE0E0E0),
+                              disabledForegroundColor: const Color(0xFF9E9E9E),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: isNarrow ? 10 : 12, vertical: 8),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               elevation: 0,
                             ),
-                            onPressed: _isApproving ? null : () => _approveItem(),
+                            onPressed: (!_isApproving && _approvedQty > 0)
+                                ? () => _approveItem()
+                                : null,
                             icon: _isApproving
                                 ? const SizedBox(
                                     width: 12,
@@ -1870,10 +1904,10 @@ class _ConsolidatedIndentItemRowState
                                         strokeWidth: 2, color: _surface),
                                   )
                                 : const Icon(Icons.check_rounded, size: 15),
-                            label: const Text(
-                              'Approve Item',
+                            label: Text(
+                              'Approve',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: isNarrow ? 11.5 : 12,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -1968,18 +2002,103 @@ class _ConsolidatedIndentItemRowState
           ],
 
           // Reason / Purpose if present
-          if (item.reason.isNotEmpty) ...[
+          if (item.reason.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
-              'Reason: ${item.reason}',
-              style: const TextStyle(
-                fontSize: 11.5,
-                color: _ink600,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+            _buildDynamicReason(item.reason.trim()),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicReason(String cleanReason) {
+    final isLong = cleanReason.length > 70;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBF9F6),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _stroke.withValues(alpha: 0.8)),
+      ),
+      child: InkWell(
+        onTap: isLong
+            ? () => setState(() => _isReasonExpanded = !_isReasonExpanded)
+            : null,
+        borderRadius: BorderRadius.circular(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2, right: 6),
+                  child: Icon(
+                    Icons.comment_outlined,
+                    size: 13,
+                    color: _ink600,
+                  ),
+                ),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: _ink700,
+                        height: 1.35,
+                      ),
+                      children: [
+                        const TextSpan(
+                          text: 'Reason: ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontStyle: FontStyle.normal,
+                            color: _ink900,
+                          ),
+                        ),
+                        TextSpan(
+                          text: cleanReason,
+                          style: const TextStyle(
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                    maxLines: _isReasonExpanded ? null : 2,
+                    overflow: _isReasonExpanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (isLong) ...[
+              const SizedBox(height: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _isReasonExpanded ? 'Show less' : 'Show more',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: _ink900,
+                    ),
+                  ),
+                  Icon(
+                    _isReasonExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 13,
+                    color: _ink900,
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

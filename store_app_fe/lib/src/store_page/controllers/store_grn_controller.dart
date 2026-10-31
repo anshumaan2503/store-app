@@ -328,10 +328,9 @@ class StoreGrnController extends StateNotifier<bool> {
       );
 
       return res.fold((f) {
-        showSnackBar('Failed: ${f.message}');
+        showSnackBar('Failed: ${f.message}', isError: true);
         return null;
       }, (grn) {
-        showSnackBar('GRN ${grn.grnNumber} Approved! Ready for QR rack putaway.');
         ref.read(grnCartProvider.notifier).clear();
         ref.invalidate(storeGrnListProvider);
         ref.invalidate(refillRequestsListProvider);
@@ -347,10 +346,9 @@ class StoreGrnController extends StateNotifier<bool> {
     try {
       final res = await ref.read(storeGrnRepositoryProvider).approveGrn(grnId);
       return res.fold((f) {
-        showSnackBar('Approve failed: ${f.message}');
+        showSnackBar('Approve failed: ${f.message}', isError: true);
         return false;
       }, (grn) {
-        showSnackBar('GRN ${grn.grnNumber} Approved! Ready for QR putaway.');
         ref.invalidate(storeGrnListProvider);
         return true;
       });
@@ -364,10 +362,9 @@ class StoreGrnController extends StateNotifier<bool> {
     try {
       final res = await ref.read(storeGrnRepositoryProvider).rejectGrn(grnId, reason);
       return res.fold((f) {
-        showSnackBar('Reject failed: ${f.message}');
+        showSnackBar('Reject failed: ${f.message}', isError: true);
         return false;
       }, (grn) {
-        showSnackBar('GRN ${grn.grnNumber} Rejected');
         ref.invalidate(storeGrnListProvider);
         return true;
       });

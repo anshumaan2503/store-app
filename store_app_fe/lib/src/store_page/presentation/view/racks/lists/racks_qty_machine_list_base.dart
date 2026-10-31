@@ -12,6 +12,7 @@ import '../widgets/rack_card.dart';
 import '../widgets/racks_shared_widgets.dart';
 import '../widgets/racks_theme.dart';
 import '../qr_code_rack/qr_code_print_rack_page.dart';
+import '../../../widgets/store_ui_state_widgets.dart';
 
 class RacksQtyMachineListPage extends ConsumerStatefulWidget {
   const RacksQtyMachineListPage({super.key, required this.isScrap});
@@ -246,10 +247,7 @@ class _RacksQtyMachineListPageState
 
                         Expanded(
                           child: racksAv.when(
-                            loading:
-                                () => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
+                            loading: () => const StoreLoadingWidget(),
                             error: (e, _) => Center(child: Text('Error: $e')),
                             data: (paged) {
                               final rows = paged.rows;

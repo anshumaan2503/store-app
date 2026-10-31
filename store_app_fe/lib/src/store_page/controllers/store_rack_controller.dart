@@ -71,37 +71,44 @@ class PagedRacks {
 }
 
 final storeAllRackPagedStreamProvider =
-    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<Map<String, dynamic>>> roomStream =
-          StreamController(sync: true);
-      List<Map<String, dynamic>> returnValue = [];
-      socketManager.getSocket().emit("store:findRealAllRackPaged", {});
-      socketManager.getSocket().on("store:findRealAllRackPaged", (data) {
-        // print(data);
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(element);
-        }
-        roomStream.add(returnValue);
+    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<Map<String, dynamic>>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = <Map<String, dynamic>>[];
+          for (var element in data) {
+            if (element is Map) {
+              list.add(Map<String, dynamic>.from(element));
+            }
+          }
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (_) {}
+      }
+
+      socket.on("store:findRealAllRackPaged", handler);
+      socket.emit("store:findRealAllRackPaged", {});
+
+      ref.onDispose(() {
+        socket.off("store:findRealAllRackPaged", handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in roomStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 /* -------- WS: list paged -------- */
 final storeRackPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRacks, RackQuery>((ref, query) async* {
+    .family<PagedRacks, RackQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRacks>(sync: true);
-
-      // print('WS -> emit store:findAllRackPaged ${query.toJson()}');
+      final controller = StreamController<PagedRacks>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
-        // print('WS <- store:findAllRackPaged dataType=${data.runtimeType}');
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -109,48 +116,57 @@ final storeRackPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRack.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRacks(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRacks(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (e) {
-          print('parse error: $e');
+          debugPrint('parse error: $e');
         }
       }
 
       socket.on('store:findAllRackPaged', handler);
       socket.emit('store:findAllRackPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRacks(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllRackPaged', handler);
         controller.close();
       });
 
-      // ✅ ensures provider is not stuck in loading
-      yield PagedRacks(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-
-      yield* controller.stream;
+      return controller.stream;
     });
 
 final storeScrapRackPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRacks, RackQuery>((ref, query) async* {
+    .family<PagedRacks, RackQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRacks>(sync: true);
-
-      // print('WS -> emit store:findAllRackPaged ${query.toJson()}');
+      final controller = StreamController<PagedRacks>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
-        // print('WS <- store:findAllRackPaged dataType=${data.runtimeType}');
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -158,48 +174,57 @@ final storeScrapRackPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRack.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRacks(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRacks(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (e) {
-          print('parse error: $e');
+          debugPrint('parse error: $e');
         }
       }
 
       socket.on('store:findAllScrapRackPaged', handler);
       socket.emit('store:findAllScrapRackPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRacks(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllScrapRackPaged', handler);
         controller.close();
       });
 
-      // ✅ ensures provider is not stuck in loading
-      yield PagedRacks(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-
-      yield* controller.stream;
+      return controller.stream;
     });
 
 final storeGoodMachineRackPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRacks, RackQuery>((ref, query) async* {
+    .family<PagedRacks, RackQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRacks>(sync: true);
-
-      // print('WS -> emit store:findAllRackPaged ${query.toJson()}');
+      final controller = StreamController<PagedRacks>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
-        // print('WS <- store:findAllRackPaged dataType=${data.runtimeType}');
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -207,48 +232,57 @@ final storeGoodMachineRackPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRack.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRacks(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRacks(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (e) {
-          print('parse error: $e');
+          debugPrint('parse error: $e');
         }
       }
 
       socket.on('store:findAllGoodMachineRackPaged', handler);
       socket.emit('store:findAllGoodMachineRackPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRacks(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllGoodMachineRackPaged', handler);
         controller.close();
       });
 
-      // ✅ ensures provider is not stuck in loading
-      yield PagedRacks(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-
-      yield* controller.stream;
+      return controller.stream;
     });
 
 final storeScrapMachineRackPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRacks, RackQuery>((ref, query) async* {
+    .family<PagedRacks, RackQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRacks>(sync: true);
-
-      // print('WS -> emit store:findAllRackPaged ${query.toJson()}');
+      final controller = StreamController<PagedRacks>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
-        // print('WS <- store:findAllRackPaged dataType=${data.runtimeType}');
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -256,49 +290,63 @@ final storeScrapMachineRackPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRack.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRacks(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRacks(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (e) {
-          print('parse error: $e');
+          debugPrint('parse error: $e');
         }
       }
 
       socket.on('store:findAllScrapMachineRackPaged', handler);
       socket.emit('store:findAllScrapMachineRackPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRacks(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllScrapMachineRackPaged', handler);
         controller.close();
       });
 
-      // ✅ ensures provider is not stuck in loading
-      yield PagedRacks(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-
-      yield* controller.stream;
+      return controller.stream;
     });
 
 /* -------- WS: get one -------- */
 final storeRackOneStreamProvider = StreamProvider.autoDispose
-    .family<StoreRack?, String>((ref, id) async* {
+    .family<StoreRack?, String>((ref, id) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<StoreRack?>(sync: true);
+      final controller = StreamController<StoreRack?>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
-            controller.add(StoreRack.fromMap(data.cast<String, dynamic>()));
+            if (!controller.isClosed) {
+              controller.add(StoreRack.fromMap(data.cast<String, dynamic>()));
+            }
           }
         } catch (_) {}
       }
@@ -306,23 +354,28 @@ final storeRackOneStreamProvider = StreamProvider.autoDispose
       socket.on('store:findOneRack', handler);
       socket.emit('store:findOneRack', {'id': id});
 
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) controller.add(null);
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findOneRack', handler);
         controller.close();
       });
 
-      yield null;
-      await for (final v in controller.stream) {
-        yield v;
-      }
+      return controller.stream;
     });
 
 final storeNotOccupiecRackPagedStreamProvider = StreamProvider.autoDispose
-    .family<PagedRacks, RackQuery>((ref, query) async* {
+    .family<PagedRacks, RackQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedRacks>(sync: true);
+      final controller = StreamController<PagedRacks>();
+      Timer? timeoutTimer;
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is Map) {
             final list =
@@ -330,14 +383,16 @@ final storeNotOccupiecRackPagedStreamProvider = StreamProvider.autoDispose
                     .map((e) => StoreRack.fromMap(e as Map<String, dynamic>))
                     .toList();
 
-            controller.add(
-              PagedRacks(
-                rows: list,
-                total: (data['total'] ?? list.length) as int,
-                page: (data['page'] ?? query.page) as int,
-                limit: (data['limit'] ?? query.limit) as int,
-              ),
-            );
+            if (!controller.isClosed) {
+              controller.add(
+                PagedRacks(
+                  rows: list,
+                  total: (data['total'] ?? list.length) as int,
+                  page: (data['page'] ?? query.page) as int,
+                  limit: (data['limit'] ?? query.limit) as int,
+                ),
+              );
+            }
           }
         } catch (_) {}
       }
@@ -346,18 +401,27 @@ final storeNotOccupiecRackPagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findNotOccupiedRackPaged', handler);
       socket.emit('store:findNotOccupiedRackPaged', query.toJson());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedRacks(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findNotOccupiedRackPaged', handler);
         controller.close();
       });
 
-      yield PagedRacks(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-      yield* controller.stream;
+      return controller.stream;
     });
 
 final rackDataByRoomDataStreamProvider = StreamProvider.autoDispose

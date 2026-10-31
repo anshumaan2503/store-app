@@ -37,6 +37,32 @@ class IssueItemQuery {
 }
 
 @immutable
+class IssueRackQuery {
+  final String? search;
+  final String rackId;
+  final String? createdBy;
+
+  const IssueRackQuery({this.search, required this.rackId, this.createdBy});
+
+  Map<String, dynamic> toMap() => {
+    'search': search,
+    'rackId': rackId,
+    'createdBy': createdBy,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IssueRackQuery &&
+          other.search == search &&
+          other.rackId == rackId &&
+          other.createdBy == createdBy;
+
+  @override
+  int get hashCode => Object.hash(search, rackId, createdBy);
+}
+
+@immutable
 class IssueQuery {
   final int page; // 1-based
   final int limit;
@@ -359,15 +385,18 @@ class IssuePagedUi {
 // store_item_issue_controller.dart (add)
 
 final pagedIssuesStreamProvider = StreamProvider.autoDispose
-    .family<PagedIssue, IssueQuery>((ref, query) async* {
+    .family<PagedIssue, IssueQuery>((ref, query) {
       final socket = ref.watch(socketProvider).getSocket();
-      final controller = StreamController<PagedIssue>(sync: true);
+      final controller = StreamController<PagedIssue>();
+      Timer? timeoutTimer;
 
       debugPrint('WS -> emit store:issues:list ${query.toMap()}');
 
       late void Function(dynamic) handler;
 
       handler = (dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         debugPrint('WS <- store:issues:list dataType=${data.runtimeType}');
         try {
           if (data is! Map) return;
@@ -418,14 +447,16 @@ final pagedIssuesStreamProvider = StreamProvider.autoDispose
                   .map((e) => IssueModel.fromJson(Map<String, dynamic>.from(e)))
                   .toList();
 
-          controller.add(
-            PagedIssue(
-              rows: rows,
-              total: _toInt(m['total'] ?? rows.length),
-              page: respPage == 0 ? query.page : respPage,
-              limit: respLimit == 0 ? query.limit : respLimit,
-            ),
-          );
+          if (!controller.isClosed) {
+            controller.add(
+              PagedIssue(
+                rows: rows,
+                total: _toInt(m['total'] ?? rows.length),
+                page: respPage == 0 ? query.page : respPage,
+                limit: respLimit == 0 ? query.limit : respLimit,
+              ),
+            );
+          }
         } catch (e, st) {
           debugPrint('pagedIssuesStreamProvider parse error: $e\n$st');
         }
@@ -434,20 +465,27 @@ final pagedIssuesStreamProvider = StreamProvider.autoDispose
       socket.on('store:issues:list', handler);
       socket.emit('store:issues:list', query.toMap());
 
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!controller.isClosed) {
+          controller.add(
+            PagedIssue(
+              rows: const [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+            ),
+          );
+        }
+      });
+
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:issues:list', handler);
         controller.close();
       });
 
-      // ✅ ensures provider is not stuck in loading (same as your example)
-      yield PagedIssue(
-        rows: const [],
-        total: 0,
-        page: query.page,
-        limit: query.limit,
-      );
-
-      yield* controller.stream;
+      return controller.stream;
     });
 
 // final issueSourcesStreamProvider = StreamProvider.autoDispose.family<
@@ -626,6 +664,45 @@ final issueByIdItemAllDataStreamProvider = StreamProvider.autoDispose
 
       ref.onDispose(() {
         socket.off('store:issueByIdItem', handler);
+        if (!ctrl.isClosed) ctrl.close();
+      });
+
+      return ctrl.stream;
+    });
+
+final issueByIdRackAllDataStreamProvider = StreamProvider.autoDispose
+    .family<List<IssueModel>, IssueRackQuery>((ref, rackQuery) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<IssueModel>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final issues = <IssueModel>[];
+          for (var element in data) {
+            if (element is Map) {
+              issues.add(
+                IssueModel.fromJson(Map<String, dynamic>.from(element)),
+              );
+            }
+          }
+          if (!ctrl.isClosed) ctrl.add(issues);
+        } catch (e, st) {
+          debugPrint('store:issuesByRackId handler error: $e\n$st');
+        }
+      }
+
+      var dto = {
+        "rackId": rackQuery.rackId,
+        "createdBy": rackQuery.createdBy,
+        "search": rackQuery.search,
+      };
+
+      socket.on('store:issuesByRackId', handler);
+      socket.emit('store:issuesByRackId', dto);
+
+      ref.onDispose(() {
+        socket.off('store:issuesByRackId', handler);
         if (!ctrl.isClosed) ctrl.close();
       });
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../controllers/store_grn_controller.dart';
+import '../../../../components/utils.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -15,8 +16,8 @@ const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFF9F7F5);
 const _stroke = Color(0xFFDFE1D6);
 
-void showGrnCartSheet(BuildContext context) {
-  showModalBottomSheet(
+Future<void> showGrnCartSheet(BuildContext context) {
+  return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -52,11 +53,17 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
     super.dispose();
   }
 
-  Future<void> _pickChallanImage() async {
+  Future<void> _pickChallanImage([ImageSource? source]) async {
+    if (source == null) {
+      _showChallanSourceSheet();
+      return;
+    }
     final picker = ImagePicker();
     final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
+      source: source,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (picked == null) return;
 
@@ -71,6 +78,38 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
     } finally {
       if (mounted) setState(() => _isUploadingImage = false);
     }
+  }
+
+  void _showChallanSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
+              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickChallanImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
+              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickChallanImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _removeChallanImage() {
@@ -794,6 +833,7 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
                       ? null
                       : () async {
                           final nav = Navigator.of(context);
+                          final rootNav = Navigator.of(context, rootNavigator: true);
                           final grn = await ref
                               .read(storeGrnControllerProvider.notifier)
                               .submitGrn(
@@ -801,8 +841,13 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
                                 remarks: _remarksCtrl.text.trim(),
                                 autoApprove: true,
                               );
-                          if (grn != null && mounted) {
-                            nav.pop();
+                          if (grn != null) {
+                            if (nav.canPop()) {
+                              nav.pop(grn);
+                            } else if (rootNav.canPop()) {
+                              rootNav.pop(grn);
+                            }
+                            showSnackBar('GRN ${grn.grnNumber} Approved! Ready for QR rack putaway.');
                           }
                         },
                   icon: isSubmitting
@@ -830,7 +875,7 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E7D32),
+                    backgroundColor: _ink900,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

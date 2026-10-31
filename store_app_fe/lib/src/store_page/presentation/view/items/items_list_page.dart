@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart' hide Border;
@@ -22,7 +23,6 @@ import 'find_item_page.dart';
 import 'item_add_page.dart';
 import 'item_edit_page.dart';
 import 'item_list_card_page.dart';
-import 'qr_code/qr_scanner_item_page.dart';
 import '../issue/qr_code_issue/qr_scanner_item_issue_page.dart';
 
 const _ink900 = Color(0xFF282321);
@@ -375,34 +375,50 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   //   if (ok == true) _refresh();
   // }
 
+  Future<void> _handleExportExcel() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: StoreLoadingWidget(message: 'Preparing items for export...'),
+      ),
+    );
+    try {
+      final rows = await ref.read(itemAllPagedStreamProvider.future);
+      if (!mounted) return;
+      Navigator.pop(context);
+      await _showExportSheet(rows);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load export data: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final av = ref.watch(itemAllPagedStreamProvider);
     final pagedUser = ref.watch(userFindOneDataStreamProvider);
     return pagedUser.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('Room load error: $e'),
+      loading: () => const StoreLoadingWidget(),
+      error: (e, _) => Center(child: Text('User load error: $e')),
       data: (user) {
-        return av.when(
-          loading: () => const LinearProgressIndicator(minHeight: 2),
-          error: (e, _) => Text('Room load error: $e'),
-          data: (item) {
-            final rows = item;
-            return DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  // Unified Tabs & Quick Actions Toolbar
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                    child: Row(
-                      children: [
-                        // Segmented Pill TabBar
-                        Expanded(
-                          child: Container(
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: _surfaceAlt.withValues(alpha: 0.5),
+        return DefaultTabController(
+          length: 2,
+          child: Column(
+            children: [
+              // Unified Tabs & Quick Actions Toolbar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Row(
+                  children: [
+                    // Segmented Pill TabBar
+                    Expanded(
+                      child: Container(
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _surfaceAlt.withValues(alpha: 0.5),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(color: _stroke),
                             ),
@@ -477,7 +493,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                           _HeaderActionButton(
                             icon: Icons.file_download_rounded,
                             tooltip: 'Download Excel',
-                            onPressed: () => _showExportSheet(rows),
+                            onPressed: _handleExportExcel,
                           ),
                         ],
                         if (_canAddItems(user)) ...[
@@ -495,12 +511,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                   ),
 
                   // Content Views
-                  const Expanded(
+                  Expanded(
                     child: TabBarView(
-                      physics: ClampingScrollPhysics(),
+                      physics: const ClampingScrollPhysics(),
                       children: [
-                        ItemsGoodQtyListPage(),
-                        ItemsScrapListPage(),
+                        ItemsGoodQtyListPage(user: user),
+                        ItemsScrapListPage(user: user),
                       ],
                     ),
                   ),
@@ -509,8 +525,6 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
             );
           },
         );
-      },
-    );
   }
 }
 
@@ -569,13 +583,13 @@ class _TransferRackDialogState extends ConsumerState<_TransferRackDialog> {
             const SizedBox(height: 10),
             Expanded(
               child: racksAv.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const StoreLoadingWidget(),
                 error: (e, _) => Center(child: Text('Rack load error: $e')),
                 data: (paged) {
                   // remove current rack from options (no-op)
                   final list =
                       paged.rows
-                          .where((r) => r.id != widget.item.rackId)
+                          .where((r) => !widget.item.rackId.contains(r.id))
                           .toList();
 
                   if (list.isEmpty) {
@@ -726,7 +740,7 @@ class _TransferItemDialogState extends ConsumerState<_TransferItemDialog> {
 
             Expanded(
               child: racksAv.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const StoreLoadingWidget(),
                 error: (e, _) => Center(child: Text('Rack load error: $e')),
                 data: (paged) {
                   // destination cannot be same rack
@@ -1005,8 +1019,8 @@ class _CompactScanFab extends StatelessWidget {
             onTap: onPressed,
             borderRadius: BorderRadius.circular(10),
             child: Container(
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 13),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: _stroke),
@@ -1017,16 +1031,16 @@ class _CompactScanFab extends StatelessWidget {
                 children: [
                   Icon(
                     icon,
-                    size: 15,
+                    size: 17,
                     color: _surface,
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 6),
                   Text(
                     label,
                     style: const TextStyle(
                       color: _surface,
                       fontWeight: FontWeight.w800,
-                      fontSize: 11.5,
+                      fontSize: 12.5,
                       letterSpacing: 0.1,
                     ),
                   ),
@@ -1040,8 +1054,94 @@ class _CompactScanFab extends StatelessWidget {
   }
 }
 
+class StoreItemsSkeletonList extends StatelessWidget {
+  const StoreItemsSkeletonList({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: true,
+      itemCount: 4,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, __) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 980),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _stroke.withValues(alpha: 0.9)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x08000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const ShimmerSkeleton(
+                  width: 48,
+                  height: 48,
+                  borderRadius: BorderRadius.all(Radius.circular(14)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const ShimmerSkeleton(
+                        width: 160,
+                        height: 16,
+                        borderRadius: BorderRadius.all(Radius.circular(6)),
+                      ),
+                      const SizedBox(height: 8),
+                      const ShimmerSkeleton(
+                        width: 100,
+                        height: 12,
+                        borderRadius: BorderRadius.all(Radius.circular(4)),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: const [
+                          ShimmerSkeleton(
+                            width: 80,
+                            height: 20,
+                            borderRadius: BorderRadius.all(Radius.circular(6)),
+                          ),
+                          ShimmerSkeleton(
+                            width: 70,
+                            height: 20,
+                            borderRadius: BorderRadius.all(Radius.circular(6)),
+                          ),
+                          ShimmerSkeleton(
+                            width: 60,
+                            height: 20,
+                            borderRadius: BorderRadius.all(Radius.circular(6)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ItemsGoodQtyListPage extends ConsumerStatefulWidget {
-  const ItemsGoodQtyListPage({super.key});
+  final AuthModel? user;
+  const ItemsGoodQtyListPage({super.key, this.user});
 
   @override
   ConsumerState<ItemsGoodQtyListPage> createState() =>
@@ -1195,13 +1295,9 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
     final av = ref.watch(itemPagedStreamProvider(query));
 
     final catAv = ref.watch(parentcategoryAllDataStreamProvider);
-    final pagedUser = ref.watch(userFindOneDataStreamProvider);
+    final user = widget.user ?? ref.watch(userFindOneDataStreamProvider).value;
 
-    return pagedUser.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('User load error: $e'),
-      data: (user) {
-        return Scaffold(
+    return Scaffold(
           floatingActionButtonLocation:
               const _AbovePaginationFloatingActionButtonLocation(),
           floatingActionButton: () {
@@ -1213,54 +1309,16 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
 
             if (!hasAccess || !isIPadSize) return null;
 
-            if (user?.isSuperAdmin == true) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _CompactScanFab(
-                    heroTag: 'super_admin_items_good_scan_item_qr',
-                    tooltip: 'Scan Item QR',
-                    icon: Icons.qr_code_scanner,
-                    label: 'Scan Item QR',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const QRCodeScannerItemPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  _CompactScanFab(
-                    heroTag: 'super_admin_items_good_scan_issue_qr',
-                    tooltip: 'Scan for Issue Request',
-                    icon: Icons.qr_code_scanner,
-                    label: 'Scan for Issue Request',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const QRCodeScannerIssuePage(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              );
-            }
-
             return _CompactScanFab(
-              heroTag: 'items_good_scan_item_qr',
-              tooltip: 'Scan Item QR',
+              heroTag: 'items_good_scan_issue_qr',
+              tooltip: 'Request',
               icon: Icons.qr_code_scanner,
-              label: 'Scan Item QR',
+              label: 'Request',
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const QRCodeScannerItemPage(),
+                    builder: (_) => const QRCodeScannerIssuePage(isDirectCreateRequest: true),
                   ),
                 );
               },
@@ -1299,6 +1357,7 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                           _StoreSearchBar(
                             controller: _searchController,
                             hintText: 'Search item by name or code...',
+                            isLoading: av.isLoading,
                             onChanged: (v) => setState(() {
                               _q = v.trim();
                               _limit = 12;
@@ -1315,8 +1374,34 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
                             children: [
                               Expanded(
                                 child: catAv.when(
-                                  loading: () => const LinearProgressIndicator(
-                                    minHeight: 2,
+                                  loading: () => Container(
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: _surfaceAlt.withValues(alpha: .35),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: _stroke),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    alignment: Alignment.centerLeft,
+                                    child: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.category_outlined,
+                                          color: _ink600,
+                                          size: 18,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Loading categories...',
+                                          style: TextStyle(
+                                            color: _ink600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   error: (e, _) =>
                                       Text('Category load error: $e'),
@@ -1463,115 +1548,122 @@ class _ItemsGoodQtyListPageState extends ConsumerState<ItemsGoodQtyListPage>
 
                 // Items List
                 Expanded(
-                  child: av.when(
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                    error: (e, _) => StoreErrorView(
-                      error: e,
-                      onRetry: _refresh,
-                    ),
-                    data: (paged) {
-                      final rows = paged.rows;
-                      if (rows.isEmpty) {
-                        return Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 980),
-                            child: StoreEmptyStateWidget(
-                              message:
-                                  'No items found. Create an item and map Item Name + Rack + Category.',
-                              searchQuery: _q,
-                              onClearSearch: () => setState(() {
-                                _q = '';
-                                _limit = 12;
-                              }),
-                            ),
-                          ),
-                        );
-                      }
-
-                      final canLoadMore = rows.length < paged.total;
-
-                      return Column(
-                        children: [
-                          Expanded(
-                            child: Scrollbar(
-                              controller: _scrollController,
-                              thumbVisibility: true,
-                              trackVisibility: true,
-                              interactive: true,
-                              child: ListView.separated(
-                                controller: _scrollController,
-                                itemCount: rows.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (_, i) {
-                                  final it = rows[i];
-                                  final hasQty = _hasAnyQty(it);
-
-                                  return Center(
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(maxWidth: 980),
-                                      child: ItemListCard(
-                                        key: i == 0 ? GuidedTourController.firstItemCardKey : null,
-                                        stockMetricsKey: i == 0 ? GuidedTourController.firstItemStockMetricsKey : null,
-                                        editButtonKey: i == 0 ? GuidedTourController.firstItemEditButtonKey : null,
-                                        detailsKey: i == 0 ? GuidedTourController.firstItemDetailsKey : null,
-                                        actionsKey: i == 0 ? GuidedTourController.firstItemActionsKey : null,
-                                        addToCartKey: i == 0 ? GuidedTourController.firstItemAddToCartKey : null,
-                                        index: i,
-                                        item: it,
-                                        hasQty: hasQty,
-                                        onEdit: () => _openEdit(it),
-                                        onTransferRack: (!hasQty &&
-                                                (user?.isSuperAdmin == true ||
-                                                    (user?.appWorks.contains("storeadmin") ?? false) ||
-                                                    (user?.appWorks.contains("storeitemtransfer") ?? false)))
-                                            ? () => _openTransferRack(it)
-                                            : null,
-                                        onTransferItem: (hasQty &&
-                                                (user?.isSuperAdmin == true ||
-                                                    (user?.appWorks.contains("storeadmin") ?? false) ||
-                                                    (user?.appWorks.contains("storeitemtransfer") ?? false)))
-                                            ? () => _openTransferItem(it)
-                                            : null,
-                                        onDelete: () => _confirmDelete(it),
-                                        canEdit: _canEditItems(user),
-                                        canDelete: _canDeleteItems(user),
-                                        canFind: _canFindItems(user),
-                                      ),
-                                    ),
-                                  );
-                                },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: av.when(
+                      loading: () => const StoreItemsSkeletonList(
+                        key: ValueKey('good_items_loading'),
+                      ),
+                      error: (e, _) => StoreErrorView(
+                        key: const ValueKey('good_items_error'),
+                        error: e,
+                        onRetry: _refresh,
+                      ),
+                      data: (paged) {
+                        final rows = paged.rows;
+                        if (rows.isEmpty) {
+                          return Center(
+                            key: const ValueKey('good_items_empty'),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 980),
+                              child: StoreEmptyStateWidget(
+                                message:
+                                    'No items found. Create an item and map Item Name + Rack + Category.',
+                                searchQuery: _q,
+                                onClearSearch: () => setState(() {
+                                  _q = '';
+                                  _limit = 12;
+                                }),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
+                          );
+                        }
 
-                          // Sleek Pagination Status Bar
-                          StorePaginationBar(
-                            currentCount: rows.length,
-                            totalCount: paged.total,
-                            itemLabel: 'items',
-                            canLoadMore: canLoadMore,
-                            onLoadMore: () => _loadMore(paged),
-                          ),
-                        ],
-                      );
-                    },
+                        final canLoadMore = rows.length < paged.total;
+
+                        return Column(
+                          key: const ValueKey('good_items_content'),
+                          children: [
+                            Expanded(
+                              child: Scrollbar(
+                                controller: _scrollController,
+                                thumbVisibility: true,
+                                trackVisibility: true,
+                                interactive: true,
+                                child: ListView.separated(
+                                  controller: _scrollController,
+                                  itemCount: rows.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder: (_, i) {
+                                    final it = rows[i];
+                                    final hasQty = _hasAnyQty(it);
+
+                                    return Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 980),
+                                        child: ItemListCard(
+                                          key: i == 0 ? GuidedTourController.firstItemCardKey : null,
+                                          stockMetricsKey: i == 0 ? GuidedTourController.firstItemStockMetricsKey : null,
+                                          editButtonKey: i == 0 ? GuidedTourController.firstItemEditButtonKey : null,
+                                          detailsKey: i == 0 ? GuidedTourController.firstItemDetailsKey : null,
+                                          actionsKey: i == 0 ? GuidedTourController.firstItemActionsKey : null,
+                                          addToCartKey: i == 0 ? GuidedTourController.firstItemAddToCartKey : null,
+                                          index: i,
+                                          item: it,
+                                          hasQty: hasQty,
+                                          onEdit: () => _openEdit(it),
+                                          onTransferRack: (!hasQty &&
+                                                  (user?.isSuperAdmin == true ||
+                                                      (user?.appWorks.contains("storeadmin") ?? false) ||
+                                                      (user?.appWorks.contains("storeitemtransfer") ?? false)))
+                                              ? () => _openTransferRack(it)
+                                              : null,
+                                          onTransferItem: (hasQty &&
+                                                  (user?.isSuperAdmin == true ||
+                                                      (user?.appWorks.contains("storeadmin") ?? false) ||
+                                                      (user?.appWorks.contains("storeitemtransfer") ?? false)))
+                                              ? () => _openTransferItem(it)
+                                              : null,
+                                          onDelete: () => _confirmDelete(it),
+                                          canEdit: _canEditItems(user),
+                                          canDelete: _canDeleteItems(user),
+                                          canFind: _canFindItems(user),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Sleek Pagination Status Bar
+                            StorePaginationBar(
+                              currentCount: rows.length,
+                              totalCount: paged.total,
+                              itemLabel: 'items',
+                              canLoadMore: canLoadMore,
+                              onLoadMore: () => _loadMore(paged),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         );
-      },
-    );
   }
 }
 
 class ItemsScrapListPage extends ConsumerStatefulWidget {
-  const ItemsScrapListPage({super.key});
+  final AuthModel? user;
+  const ItemsScrapListPage({super.key, this.user});
 
   @override
   ConsumerState<ItemsScrapListPage> createState() => _ItemsScrapListPageState();
@@ -1726,12 +1818,8 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
     );
     final av = ref.watch(itemScrapPagedStreamProvider(query));
     final catAv = ref.watch(parentcategoryAllDataStreamProvider);
-    final pagedUser = ref.watch(userFindOneDataStreamProvider);
-    return pagedUser.when(
-      loading: () => const LinearProgressIndicator(minHeight: 2),
-      error: (e, _) => Text('Room load error: $e'),
-      data: (user) {
-        return Scaffold(
+    final user = widget.user ?? ref.watch(userFindOneDataStreamProvider).value;
+    return Scaffold(
           floatingActionButtonLocation:
               const _AbovePaginationFloatingActionButtonLocation(),
           floatingActionButton: () {
@@ -1744,54 +1832,16 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
 
             if (!hasAccess || !isIPadSize) return null;
 
-            if (isSuperAdmin) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _CompactScanFab(
-                    heroTag: 'super_admin_items_scrap_scan_item_qr',
-                    tooltip: 'Scan Item QR',
-                    icon: Icons.qr_code_scanner,
-                    label: 'Scan Item QR',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const QRCodeScannerItemPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  _CompactScanFab(
-                    heroTag: 'super_admin_items_scrap_scan_issue_qr',
-                    tooltip: 'Scan for Issue Request',
-                    icon: Icons.qr_code_scanner,
-                    label: 'Scan for Issue Request',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const QRCodeScannerIssuePage(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              );
-            }
-
             return _CompactScanFab(
-              heroTag: 'items_scrap_scan_item_qr',
-              tooltip: 'Scan Item QR',
+              heroTag: 'items_scrap_scan_issue_qr',
+              tooltip: 'Request',
               icon: Icons.qr_code_scanner,
-              label: 'Scan Item QR',
+              label: 'Request',
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const QRCodeScannerItemPage(),
+                    builder: (_) => const QRCodeScannerIssuePage(isDirectCreateRequest: true),
                   ),
                 );
               },
@@ -1829,6 +1879,7 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                           _StoreSearchBar(
                             controller: _searchController,
                             hintText: 'Search scrap item by name or code...',
+                            isLoading: av.isLoading,
                             onChanged: (v) => setState(() {
                               _q = v.trim();
                               _limit = 12;
@@ -1845,8 +1896,34 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
                             children: [
                               Expanded(
                                 child: catAv.when(
-                                  loading: () => const LinearProgressIndicator(
-                                    minHeight: 2,
+                                  loading: () => Container(
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: _surfaceAlt.withValues(alpha: .35),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: _stroke),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    alignment: Alignment.centerLeft,
+                                    child: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.category_outlined,
+                                          color: _ink600,
+                                          size: 18,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Loading categories...',
+                                          style: TextStyle(
+                                            color: _ink600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   error: (e, _) =>
                                       Text('Category load error: $e'),
@@ -1993,105 +2070,111 @@ class _ItemsScrapListPageState extends ConsumerState<ItemsScrapListPage>
 
                 // Items List
                 Expanded(
-                  child: av.when(
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                    error: (e, _) => StoreErrorView(
-                      error: e,
-                      onRetry: _refresh,
-                    ),
-                    data: (paged) {
-                      final rows = paged.rows;
-                      if (rows.isEmpty) {
-                        return Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 980),
-                            child: StoreEmptyStateWidget(
-                              message: 'No scrap items found.',
-                              searchQuery: _q,
-                              onClearSearch: () => setState(() {
-                                _q = '';
-                                _limit = 12;
-                              }),
-                            ),
-                          ),
-                        );
-                      }
-
-                      final canLoadMore = rows.length < paged.total;
-
-                      return Column(
-                        children: [
-                          Expanded(
-                            child: Scrollbar(
-                              controller: _scrollController,
-                              thumbVisibility: true,
-                              trackVisibility: true,
-                              interactive: true,
-                              child: ListView.separated(
-                                controller: _scrollController,
-                                itemCount: rows.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (_, i) {
-                                  final it = rows[i];
-                                  final hasQty = _hasAnyQty(it);
-
-                                  return Center(
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(maxWidth: 980),
-                                      child: ItemListCard(
-                                        index: i,
-                                        item: it,
-                                        hasQty: hasQty,
-                                        onEdit: () => _openEdit(it),
-                                        onTransferRack: (!hasQty &&
-                                                (user?.isSuperAdmin == true ||
-                                                    (user?.appWorks.contains("storeadmin") ?? false) ||
-                                                    (user?.appWorks.contains("storeitemtransfer") ?? false)))
-                                            ? () => _openTransferRack(it)
-                                            : null,
-                                        onTransferItem: (hasQty &&
-                                                (user?.isSuperAdmin == true ||
-                                                    (user?.appWorks.contains("storeadmin") ?? false) ||
-                                                    (user?.appWorks.contains("storeitemtransfer") ?? false)))
-                                            ? () => _openTransferItem(it)
-                                            : null,
-                                        onDelete: () => _confirmDelete(it),
-                                        canEdit: _canEditItems(user),
-                                        canDelete: _canDeleteItems(user),
-                                        canFind: _canFindItems(user),
-                                        addToCartKey: null,
-                                      ),
-                                    ),
-                                  );
-                                },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: av.when(
+                      loading: () => const StoreItemsSkeletonList(
+                        key: ValueKey('scrap_items_loading'),
+                      ),
+                      error: (e, _) => StoreErrorView(
+                        key: const ValueKey('scrap_items_error'),
+                        error: e,
+                        onRetry: _refresh,
+                      ),
+                      data: (paged) {
+                        final rows = paged.rows;
+                        if (rows.isEmpty) {
+                          return Center(
+                            key: const ValueKey('scrap_items_empty'),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 980),
+                              child: StoreEmptyStateWidget(
+                                message: 'No scrap items found.',
+                                searchQuery: _q,
+                                onClearSearch: () => setState(() {
+                                  _q = '';
+                                  _limit = 12;
+                                }),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
+                          );
+                        }
 
-                          // Sleek Pagination Status Bar
-                          StorePaginationBar(
-                            currentCount: rows.length,
-                            totalCount: paged.total,
-                            itemLabel: 'items',
-                            icon: Icons.precision_manufacturing_rounded,
-                            canLoadMore: canLoadMore,
-                            onLoadMore: () => _loadMore(paged),
-                          ),
-                        ],
-                      );
-                    },
+                        final canLoadMore = rows.length < paged.total;
+
+                        return Column(
+                          key: const ValueKey('scrap_items_content'),
+                          children: [
+                            Expanded(
+                              child: Scrollbar(
+                                controller: _scrollController,
+                                thumbVisibility: true,
+                                trackVisibility: true,
+                                interactive: true,
+                                child: ListView.separated(
+                                  controller: _scrollController,
+                                  itemCount: rows.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder: (_, i) {
+                                    final it = rows[i];
+                                    final hasQty = _hasAnyQty(it);
+
+                                    return Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 980),
+                                        child: ItemListCard(
+                                          index: i,
+                                          item: it,
+                                          hasQty: hasQty,
+                                          onEdit: () => _openEdit(it),
+                                          onTransferRack: (!hasQty &&
+                                                  (user?.isSuperAdmin == true ||
+                                                      (user?.appWorks.contains("storeadmin") ?? false) ||
+                                                      (user?.appWorks.contains("storeitemtransfer") ?? false)))
+                                              ? () => _openTransferRack(it)
+                                              : null,
+                                          onTransferItem: (hasQty &&
+                                                  (user?.isSuperAdmin == true ||
+                                                      (user?.appWorks.contains("storeadmin") ?? false) ||
+                                                      (user?.appWorks.contains("storeitemtransfer") ?? false)))
+                                              ? () => _openTransferItem(it)
+                                              : null,
+                                          onDelete: () => _confirmDelete(it),
+                                          canEdit: _canEditItems(user),
+                                          canDelete: _canDeleteItems(user),
+                                          canFind: _canFindItems(user),
+                                          addToCartKey: null,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Sleek Pagination Status Bar
+                            StorePaginationBar(
+                              currentCount: rows.length,
+                              totalCount: paged.total,
+                              itemLabel: 'items',
+                              icon: Icons.precision_manufacturing_rounded,
+                              canLoadMore: canLoadMore,
+                              onLoadMore: () => _loadMore(paged),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         );
-      },
-    );
   }
 }
 
@@ -2148,6 +2231,7 @@ class _StoreSearchBar extends StatefulWidget {
   final String hintText;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
+  final bool isLoading;
 
   const _StoreSearchBar({
     super.key,
@@ -2155,6 +2239,7 @@ class _StoreSearchBar extends StatefulWidget {
     required this.hintText,
     required this.onChanged,
     required this.onClear,
+    this.isLoading = false,
   });
 
   @override
@@ -2164,6 +2249,7 @@ class _StoreSearchBar extends StatefulWidget {
 class _StoreSearchBarState extends State<_StoreSearchBar> {
   late final FocusNode _focusNode;
   bool _isFocused = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -2176,6 +2262,7 @@ class _StoreSearchBarState extends State<_StoreSearchBar> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _focusNode.dispose();
     super.dispose();
   }
@@ -2209,11 +2296,20 @@ class _StoreSearchBarState extends State<_StoreSearchBar> {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 12, right: 10),
-            child: Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: _isFocused ? _ink900 : _ink600,
-            ),
+            child: widget.isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(_ink900),
+                    ),
+                  )
+                : Icon(
+                    Icons.search_rounded,
+                    size: 20,
+                    color: _isFocused ? _ink900 : _ink600,
+                  ),
           ),
           Expanded(
             child: TextField(
@@ -2221,7 +2317,12 @@ class _StoreSearchBarState extends State<_StoreSearchBar> {
               focusNode: _focusNode,
               onChanged: (val) {
                 setState(() {});
-                widget.onChanged(val);
+                _debounceTimer?.cancel();
+                _debounceTimer = Timer(const Duration(milliseconds: 250), () {
+                  if (mounted) {
+                    widget.onChanged(val);
+                  }
+                });
               },
               style: const TextStyle(
                 color: _ink900,
@@ -2256,6 +2357,7 @@ class _StoreSearchBarState extends State<_StoreSearchBar> {
               padding: const EdgeInsets.only(right: 8),
               child: InkWell(
                 onTap: () {
+                  _debounceTimer?.cancel();
                   widget.controller.clear();
                   widget.onClear();
                   setState(() {});

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../components/socket_manager.dart';
 import '../../components/utils.dart';
 import '../domains/repositories/store_receive_repository.dart';
+import 'stock_refill_request_controller.dart';
+import 'store_items_controller.dart';
+import 'store_rack_controller.dart';
 
 class ReceivePagedResult {
   final List<Map<String, dynamic>> rows;
@@ -57,6 +60,7 @@ final receivePagedStreamProvider = StreamProvider.autoDispose
     .family<ReceivePagedResult, ReceivePagedQuery>((ref, q) {
       final socket = ref.watch(socketProvider).getSocket();
       final ctrl = StreamController<ReceivePagedResult>();
+      Timer? timeoutTimer;
 
       int asInt(dynamic v, int fallback) {
         if (v is int) return v;
@@ -65,6 +69,8 @@ final receivePagedStreamProvider = StreamProvider.autoDispose
       }
 
       void handler(dynamic data) {
+        timeoutTimer?.cancel();
+        timeoutTimer = null;
         try {
           if (data is! Map) return;
 
@@ -75,14 +81,16 @@ final receivePagedStreamProvider = StreamProvider.autoDispose
                 return m;
               }).toList();
 
-          ctrl.add(
-            ReceivePagedResult(
-              rows: list,
-              total: asInt(data['total'], list.length),
-              page: asInt(data['page'], q.page),
-              limit: asInt(data['limit'], q.limit),
-            ),
-          );
+          if (!ctrl.isClosed) {
+            ctrl.add(
+              ReceivePagedResult(
+                rows: list,
+                total: asInt(data['total'], list.length),
+                page: asInt(data['page'], q.page),
+                limit: asInt(data['limit'], q.limit),
+              ),
+            );
+          }
         } catch (e, st) {
           debugPrint('store:findAllReceivePaged handler error: $e\n$st');
         }
@@ -91,17 +99,22 @@ final receivePagedStreamProvider = StreamProvider.autoDispose
       socket.on('store:findAllReceivePaged', handler);
       socket.emit('store:findAllReceivePaged', q.toJson());
 
-      // prevent infinite loading
-      ctrl.add(
-        ReceivePagedResult(
-          rows: const [],
-          total: 0,
-          page: q.page,
-          limit: q.limit,
-        ),
-      );
+      // Fallback timer: only emit empty after timeout if server never responds
+      timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (!ctrl.isClosed) {
+          ctrl.add(
+            ReceivePagedResult(
+              rows: const [],
+              total: 0,
+              page: q.page,
+              limit: q.limit,
+            ),
+          );
+        }
+      });
 
       ref.onDispose(() {
+        timeoutTimer?.cancel();
         socket.off('store:findAllReceivePaged', handler);
         ctrl.close();
       });
@@ -110,24 +123,34 @@ final receivePagedStreamProvider = StreamProvider.autoDispose
     });
 
 final findAllReceiveDataStreamProvider =
-    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
-      SocketManager socketManager = ref.watch(socketProvider);
-      StreamController<List<Map<String, dynamic>>> receiveItemStream =
-          StreamController(sync: true);
-      List<Map<String, dynamic>> returnValue = [];
-      socketManager.getSocket().emit("store:findAllReceive", {});
-      socketManager.getSocket().on("store:findAllReceive", (data) {
-        returnValue = [];
-        for (var element in data) {
-          returnValue.add(element);
+    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+      final socket = ref.watch(socketProvider).getSocket();
+      final ctrl = StreamController<List<Map<String, dynamic>>>();
+
+      void handler(dynamic data) {
+        try {
+          if (data is! List) return;
+          final list = <Map<String, dynamic>>[];
+          for (var element in data) {
+            if (element is Map) {
+              list.add(Map<String, dynamic>.from(element));
+            }
+          }
+          if (!ctrl.isClosed) ctrl.add(list);
+        } catch (e) {
+          debugPrint('store:findAllReceive handler error: $e');
         }
-        receiveItemStream.add(returnValue);
+      }
+
+      socket.on('store:findAllReceive', handler);
+      socket.emit('store:findAllReceive', {});
+
+      ref.onDispose(() {
+        socket.off('store:findAllReceive', handler);
+        ctrl.close();
       });
 
-      yield returnValue;
-      await for (final returnValue in receiveItemStream.stream) {
-        yield returnValue;
-      }
+      return ctrl.stream;
     });
 
 final storeReceiveControllerProvider = Provider(
@@ -175,6 +198,16 @@ class StoreReceiveController extends StateNotifier<bool> {
       showSnackBar(
         data['msg']?.toString() ?? (ok ? 'Received' : 'Receive failed'),
       );
+      if (ok) {
+        ref.invalidate(refillRequestsListProvider);
+        ref.invalidate(pendingRefillRequestsCountProvider);
+        ref.invalidate(storeAllRackPagedStreamProvider);
+        if (itemId.isNotEmpty) {
+          ref.invalidate(uncreditedApprovedIndentsProvider(itemId));
+          ref.invalidate(itemFindOneStreamProvider(itemId));
+        }
+        ref.invalidate(itemPagedStreamProvider);
+      }
     });
 
     state = false;

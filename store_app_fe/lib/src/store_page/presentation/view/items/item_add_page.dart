@@ -352,7 +352,9 @@ class _ItemCreatePageState extends ConsumerState<ItemCreatePage> {
   Future<void> _pickFromGallery() async {
     final x = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 85,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (x != null) {
       final bytes = await x.readAsBytes();
@@ -366,7 +368,9 @@ class _ItemCreatePageState extends ConsumerState<ItemCreatePage> {
   Future<void> _pickFromCamera() async {
     final x = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 85,
+      imageQuality: 88,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (x != null) {
       final bytes = await x.readAsBytes();
@@ -491,13 +495,10 @@ class _ItemCreatePageState extends ConsumerState<ItemCreatePage> {
       if (_pickedImage != null) {
         final bytes = _pickedBytes ?? await _pickedImage!.readAsBytes();
 
-        String mime = 'image/png';
+        String mime = 'image/jpeg';
         final lower = _pickedImage!.name.toLowerCase();
-        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-          mime = 'image/jpeg';
-        } else if (lower.endsWith('.webp')) {
-          mime = 'image/webp';
-        }
+        if (lower.endsWith('.png')) mime = 'image/png';
+        if (lower.endsWith('.webp')) mime = 'image/webp';
 
         final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
         final uri = Uri.parse(

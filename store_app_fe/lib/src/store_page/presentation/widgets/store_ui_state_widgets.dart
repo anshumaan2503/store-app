@@ -8,6 +8,54 @@ const _surface = Color(0xFFFFFFFF);
 const _surfaceAlt = Color(0xFFFFF4E2);
 const _stroke = Color(0xFFDFE1D6);
 
+/// Standardized smooth Store loading spinner matching the app's original ink color (#282321).
+class StoreLoadingWidget extends StatelessWidget {
+  const StoreLoadingWidget({
+    super.key,
+    this.message,
+    this.size = 28.0,
+    this.strokeWidth = 2.5,
+  });
+
+  final String? message;
+  final double size;
+  final double strokeWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: size,
+              height: size,
+              child: CircularProgressIndicator(
+                strokeWidth: strokeWidth,
+                valueColor: const AlwaysStoppedAnimation<Color>(_ink900),
+              ),
+            ),
+            if (message != null && message!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                message!,
+                style: const TextStyle(
+                  color: _ink700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Standardized error view with user-friendly text and retry action.
 class StoreErrorView extends StatelessWidget {
   const StoreErrorView({
@@ -242,8 +290,8 @@ void showStoreSnackBar(
   ScaffoldMessenger.of(context).hideCurrentSnackBar();
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      duration: const Duration(milliseconds: 2500),
-      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF2563EB),
+      duration: const Duration(seconds: 2),
+      backgroundColor: isError ? Colors.red.shade700 : _ink900,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       content: Row(
@@ -583,3 +631,148 @@ class StorePaginationBar extends StatelessWidget {
     );
   }
 }
+
+/// A lightweight, mobile-optimized, expandable reason/remarks widget.
+/// Truncates long reasons to 2 lines with a clean "Show more" / "Show less" toggle.
+/// Highly optimized as a self-contained StatefulWidget so toggling does not trigger parent rebuilds.
+class StoreDynamicReasonBox extends StatefulWidget {
+  const StoreDynamicReasonBox({
+    super.key,
+    required this.reason,
+    this.prefix = 'Reason: ',
+    this.thresholdLength = 65,
+    this.collapsedMaxLines = 2,
+    this.margin,
+    this.backgroundColor,
+    this.borderColor,
+  });
+
+  final String reason;
+  final String prefix;
+  final int thresholdLength;
+  final int collapsedMaxLines;
+  final EdgeInsetsGeometry? margin;
+  final Color? backgroundColor;
+  final Color? borderColor;
+
+  @override
+  State<StoreDynamicReasonBox> createState() => _StoreDynamicReasonBoxState();
+}
+
+class _StoreDynamicReasonBoxState extends State<StoreDynamicReasonBox> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanReason = widget.reason.trim();
+    if (cleanReason.isEmpty) return const SizedBox.shrink();
+
+    final isLong = cleanReason.length > widget.thresholdLength ||
+        cleanReason.contains('\n');
+
+    final bg = widget.backgroundColor ?? const Color(0xFFFBF9F6);
+    final border = widget.borderColor ?? _stroke.withValues(alpha: 0.8);
+
+    return Container(
+      width: double.infinity,
+      margin: widget.margin,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isLong
+              ? () {
+                  setState(() {
+                    _isExpanded = !_isExpanded;
+                  });
+                }
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2, right: 6),
+                      child: Icon(
+                        Icons.comment_outlined,
+                        size: 13,
+                        color: _ink600,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: _ink700,
+                            height: 1.35,
+                          ),
+                          children: [
+                            if (widget.prefix.isNotEmpty)
+                              TextSpan(
+                                text: widget.prefix,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontStyle: FontStyle.normal,
+                                  color: _ink900,
+                                ),
+                              ),
+                            TextSpan(
+                              text: cleanReason,
+                              style: const TextStyle(
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                        maxLines: _isExpanded ? null : widget.collapsedMaxLines,
+                        overflow: _isExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                if (isLong) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        _isExpanded ? 'Show less' : 'Show more',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: _ink900,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        _isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 14,
+                        color: _ink900,
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
