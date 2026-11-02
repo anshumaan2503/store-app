@@ -267,7 +267,8 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
     final hasQty = _hasAnyQty(it);
 
     return PopupMenuButton<ItemCardAction>(
-      icon: const Icon(Icons.more_vert_rounded, color: _ink700),
+      tooltip: 'Item options',
+      icon: const Icon(Icons.more_vert_rounded, color: _ink900),
       onSelected: (a) async {
         switch (a) {
           case ItemCardAction.edit:
@@ -490,14 +491,6 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
                       ],
                     ),
                   ),
-                  if (widget.canEdit ?? false) ...[
-                    IconButton(
-                      tooltip: 'Edit Item',
-                      onPressed: () => _openEdit(it),
-                      icon: const Icon(Icons.edit_outlined, color: _ink900),
-                    ),
-                    _buildActionsMenu(it),
-                  ],
                 ],
               ),
             ),
@@ -651,21 +644,19 @@ class _ItemScanPageState extends ConsumerState<ItemScanPage> {
           style: TextStyle(color: _ink900, fontWeight: FontWeight.w900),
         ),
         actions: [
-          if (id != null && (widget.canEdit ?? false))
-            IconButton(
-              tooltip: 'Edit Item',
-              onPressed: () async {
-                final it = ref.read(itemFindOneStreamProvider(id)).value;
-                if (it != null) await _openEdit(it);
-              },
-              icon: const Icon(Icons.edit_outlined),
-            ),
           IconButton(
+            tooltip: 'Refresh',
             onPressed: () {
               if (id != null) _refreshItem();
             },
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(Icons.refresh_rounded, color: _ink900),
           ),
+          if (id != null && (widget.canEdit ?? false))
+            ref.watch(itemFindOneStreamProvider(id)).maybeWhen(
+                  data: (it) =>
+                      it != null ? _buildActionsMenu(it) : const SizedBox.shrink(),
+                  orElse: () => const SizedBox.shrink(),
+                ),
           const SizedBox(width: 6),
         ],
       ),

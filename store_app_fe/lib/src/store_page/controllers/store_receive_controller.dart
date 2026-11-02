@@ -223,11 +223,15 @@ class StoreReceiveController extends StateNotifier<bool> {
     bool ok = false;
     String imageUrl = "";
 
+    String? error;
+
     final res = await ref
         .read(storeReceiveRepositoryProvider)
         .uploadReceiveImageBase64(receiveId: receiveId, dataUrl: dataUrl);
 
-    res.fold((f) => showSnackBar(f.message), (data) {
+    res.fold((f) {
+      error = f.message;
+    }, (data) {
       ok = data['success'] == true;
       imageUrl =
           (data['imageUrl'] ?? data['entity']?['imageUrl'] ?? '').toString();
@@ -235,6 +239,6 @@ class StoreReceiveController extends StateNotifier<bool> {
 
     state = false;
 
-    return {"ok": ok, "imageUrl": imageUrl};
+    return {"ok": ok, "imageUrl": imageUrl, "error": error};
   }
 }

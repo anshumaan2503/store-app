@@ -83,30 +83,103 @@ class _GrnCartSheetState extends ConsumerState<GrnCartSheet> {
   void _showChallanSourceSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      elevation: 8,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
-              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickChallanImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
-              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickChallanImage(ImageSource.gallery);
-              },
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _stroke,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Select Photo Source',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _ink900,
+                  ),
+                ),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.camera_alt_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Take Photo',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Capture using camera',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickChallanImage(ImageSource.camera);
+                },
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.photo_library_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Choose from Gallery',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Select from photos',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickChallanImage(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

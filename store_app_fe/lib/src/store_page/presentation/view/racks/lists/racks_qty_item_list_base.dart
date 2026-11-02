@@ -109,7 +109,7 @@ class _RacksQtyItemListPageState extends ConsumerState<RacksQtyItemListPage> {
                           child: Row(
                             children: [
                               Expanded(
-                                flex: 2,
+                                flex: 1,
                                 child: roomsAv.when(
                                   loading:
                                       () => const LinearProgressIndicator(
@@ -170,6 +170,7 @@ class _RacksQtyItemListPageState extends ConsumerState<RacksQtyItemListPage> {
                                         });
                                       },
                                       decoration: InputDecoration(
+                                        isDense: true,
                                         contentPadding: const EdgeInsets.symmetric(
                                           horizontal: 10,
                                           vertical: 10,
@@ -204,7 +205,7 @@ class _RacksQtyItemListPageState extends ConsumerState<RacksQtyItemListPage> {
                               ),
                               const SizedBox(width: 10),
                               Expanded(
-                                flex: 3,
+                                flex: 1,
                                 child: TextField(
                                   onChanged: (v) {
                                     setState(() {
@@ -213,8 +214,16 @@ class _RacksQtyItemListPageState extends ConsumerState<RacksQtyItemListPage> {
                                     });
                                   },
                                   decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
                                     hintText: 'Search rack...',
-                                    hintStyle: const TextStyle(color: ink600),
+                                    hintStyle: const TextStyle(
+                                      color: ink600,
+                                      fontSize: 13,
+                                    ),
                                     prefixIcon: const Icon(
                                       Icons.search_rounded,
                                       color: ink600,
@@ -237,6 +246,7 @@ class _RacksQtyItemListPageState extends ConsumerState<RacksQtyItemListPage> {
                                   style: const TextStyle(
                                     color: ink900,
                                     fontWeight: FontWeight.w700,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),

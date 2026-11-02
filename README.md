@@ -8,9 +8,10 @@ A full-stack enterprise Store & Inventory Management System consisting of a **Ne
 
 The production release Android APK is built and ready for mobile testing and installation.
 
-[![Download Android APK](https://img.shields.io/badge/Download-Android%20APK-2ea44f?style=for-the-badge&logo=android&logoColor=white)](https://github.com/anshumaan2503/store-app/releases/download/v1.0.0/app-release.apk)
+[![Download Android APK](https://img.shields.io/badge/Download-Android%20APK-2ea44f?style=for-the-badge&logo=android&logoColor=white)](https://github.com/anshumaan2503/store-app/releases/download/v1.0.1/app-release.apk)
 
-* **Direct APK Download:** [Download app-release.apk](https://github.com/anshumaan2503/store-app/releases/download/v1.0.0/app-release.apk)
+* **Direct APK Download (v1.0.1):** [Download app-release.apk](https://github.com/anshumaan2503/store-app/releases/download/v1.0.1/app-release.apk)
+* **Latest Release Download:** [Download latest app-release.apk](https://github.com/anshumaan2503/store-app/releases/latest/download/app-release.apk)
 * **Local Extracted Binary:** `apk/app-release.apk`
 
 ---

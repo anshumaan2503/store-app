@@ -707,11 +707,11 @@ class GuidedTourController {
         id: 'f1_step5_edit_button',
         title: 'Modify Existing Specifications',
         description:
-            "Need to change a shelf location, update specifications, or adjust reorder thresholds? Tap 'Edit' on any item card anytime.",
-        targetKey: firstItemEditButtonKey,
+            'Need to change a shelf location, update specifications, or adjust reorder thresholds? Tap any item card anytime.',
+        targetKey: firstItemCardKey,
         targetSection: sectionItems,
         featureId: 'f1_create_edit_item',
-        arrowDirection: GuidedTourArrowDirection.left,
+        arrowDirection: GuidedTourArrowDirection.top,
       ),
     ];
   }

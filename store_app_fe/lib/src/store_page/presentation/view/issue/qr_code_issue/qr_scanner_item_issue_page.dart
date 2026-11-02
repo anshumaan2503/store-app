@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:store_app/src/store_page/controllers/scanner_settings_controller.dart';
+import 'package:store_app/src/store_page/presentation/view/widgets/scanner_mode_selector_bar.dart';
 
 import '../issue_scan_by_rack_page.dart';
 import '../issue_scan_page.dart';
 import '../issue_scan_return_page.dart';
 import '../issue_scan_create_page.dart';
 
-class QRCodeScannerIssuePage extends StatefulWidget {
+class QRCodeScannerIssuePage extends ConsumerStatefulWidget {
   final bool isReturn;
   final bool isDirectCreateRequest;
   const QRCodeScannerIssuePage({
@@ -16,10 +19,12 @@ class QRCodeScannerIssuePage extends StatefulWidget {
   });
 
   @override
-  State<QRCodeScannerIssuePage> createState() => _QRCodeScannerIssuePageState();
+  ConsumerState<QRCodeScannerIssuePage> createState() =>
+      _QRCodeScannerIssuePageState();
 }
 
-class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
+class _QRCodeScannerIssuePageState
+    extends ConsumerState<QRCodeScannerIssuePage> {
   late final MobileScannerController _controller;
   final double scanArea = 300;
 
@@ -95,12 +100,13 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.only(top: 8, bottom: 2),
                 child: Text(
                   widget.isDirectCreateRequest ? "Scan QR for Request" : "Scan QR for Issue Request",
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
+              const ScannerModeSelectorBar(workflow: ScannerWorkflow.issue),
               Expanded(
                 child: Stack(
                   fit: StackFit.expand,
@@ -175,12 +181,41 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
     final qrCodeId = parts[0];
     final databaseId = parts[1];
 
-    _isHandlingCode = true;
-    await _controller.pause();
+    final activeMode = ref.read(scannerSettingsProvider).issueMode;
 
     switch (qrCodeId) {
       case "P0040":
         {
+          if (activeMode == ScannerTargetMode.placeOnly) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Item QR ignored: Issue Scanner set to 'Place only' mode",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF4D4542),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+            _isHandlingCode = false;
+            await _controller.start();
+            return;
+          }
+
+          _isHandlingCode = true;
+          await _controller.pause();
           final Widget targetPage;
           if (widget.isReturn) {
             targetPage = IssueByItemReturnActionsPage(itemId: databaseId);
@@ -201,6 +236,36 @@ class _QRCodeScannerIssuePageState extends State<QRCodeScannerIssuePage> {
         }
       case "P0041":
         {
+          if (activeMode == ScannerTargetMode.itemOnly) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Place QR ignored: Issue Scanner set to 'Item only' mode",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF4D4542),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+            _isHandlingCode = false;
+            await _controller.start();
+            return;
+          }
+
+          _isHandlingCode = true;
+          await _controller.pause();
           if (!mounted) return;
           await Navigator.pushReplacement<bool, void>(
             context,

@@ -87,6 +87,7 @@ int _remainApprove(IssueLine l) => math.max(
 
 enum IssueTabSection {
   ready,
+  partial,
   history,
 }
 
@@ -151,60 +152,88 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
   }
 
   Widget _buildTopSectionTabs() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _stroke),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: KeyedSubtree(
-              key: GuidedTourController.approvedRequestsTabKey,
-              child: KeyedSubtree(
-                key: GuidedTourController.pendingApprovalsTabKey,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 640;
+
+        return Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _stroke),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: KeyedSubtree(
+                  key: GuidedTourController.approvedRequestsTabKey,
+                  child: KeyedSubtree(
+                    key: GuidedTourController.pendingApprovalsTabKey,
+                    child: _buildSectionTabButton(
+                      title: 'Ready for Issue',
+                      subtitle: 'Awaiting approval',
+                      icon: Icons.outbox_rounded,
+                      isSelected: _tabSection == IssueTabSection.ready,
+                      activeColor: const Color(0xFF5E35B1),
+                      activeBgColor: const Color(0xFFEDE7F6),
+                      isCompact: isCompact,
+                      onTap: () {
+                        if (_tabSection != IssueTabSection.ready) {
+                          setState(() {
+                            _tabSection = IssueTabSection.ready;
+                            _page = 1;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
                 child: _buildSectionTabButton(
-                  title: 'Ready for Issue & Active',
-                  subtitle: 'Awaiting approval / counter',
-                  icon: Icons.outbox_rounded,
-                  isSelected: _tabSection == IssueTabSection.ready,
-                  activeColor: const Color(0xFF5E35B1),
-                  activeBgColor: const Color(0xFFEDE7F6),
+                  title: 'Partial Issued',
+                  subtitle: 'Approved & ready for pickup',
+                  icon: Icons.hourglass_top_rounded,
+                  isSelected: _tabSection == IssueTabSection.partial,
+                  activeColor: const Color(0xFFE65100),
+                  activeBgColor: const Color(0xFFFFF3E0),
+                  isCompact: isCompact,
                   onTap: () {
-                    if (_tabSection != IssueTabSection.ready) {
+                    if (_tabSection != IssueTabSection.partial) {
                       setState(() {
-                        _tabSection = IssueTabSection.ready;
+                        _tabSection = IssueTabSection.partial;
                         _page = 1;
                       });
                     }
                   },
                 ),
               ),
-            ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: _buildSectionTabButton(
+                  title: 'Issue History',
+                  subtitle: 'All completed issues',
+                  icon: Icons.history_edu_rounded,
+                  isSelected: _tabSection == IssueTabSection.history,
+                  activeColor: const Color(0xFF00796B),
+                  activeBgColor: const Color(0xFFE0F2F1),
+                  isCompact: isCompact,
+                  onTap: () {
+                    if (_tabSection != IssueTabSection.history) {
+                      setState(() {
+                        _tabSection = IssueTabSection.history;
+                        _page = 1;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: _buildSectionTabButton(
-              title: 'Issue History',
-              subtitle: 'All completed issues',
-              icon: Icons.history_edu_rounded,
-              isSelected: _tabSection == IssueTabSection.history,
-              activeColor: const Color(0xFF00796B),
-              activeBgColor: const Color(0xFFE0F2F1),
-              onTap: () {
-                if (_tabSection != IssueTabSection.history) {
-                  setState(() {
-                    _tabSection = IssueTabSection.history;
-                    _page = 1;
-                  });
-                }
-              },
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -216,6 +245,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
     required Color activeColor,
     required Color activeBgColor,
     required VoidCallback onTap,
+    required bool isCompact,
   }) {
     return Material(
       color: Colors.transparent,
@@ -224,7 +254,10 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          padding: EdgeInsets.symmetric(
+            vertical: isCompact ? 9 : 8,
+            horizontal: isCompact ? 4 : 10,
+          ),
           decoration: BoxDecoration(
             color: isSelected ? _surface : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
@@ -241,51 +274,75 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                   ]
                 : null,
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: isSelected ? activeBgColor : Colors.black.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  icon,
-                  size: 16,
-                  color: isSelected ? activeColor : _ink600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: isCompact
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                        color: isSelected ? activeColor : _ink700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Icon(
+                      icon,
+                      size: 15,
+                      color: isSelected ? activeColor : _ink600,
                     ),
-                    const SizedBox(height: 1),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isSelected ? _ink700 : _ink600,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                          color: isSelected ? activeColor : _ink700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: isSelected ? activeBgColor : Colors.black.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 16,
+                        color: isSelected ? activeColor : _ink600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                              color: isSelected ? activeColor : _ink700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isSelected ? _ink700 : _ink600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -348,7 +405,9 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
           limit: _limit,
           sort: '-createdAt',
           createdBy: canViewAll ? null : user.uid,
-          tab: _tabSection == IssueTabSection.ready ? 'ready' : 'history',
+          tab: _tabSection == IssueTabSection.ready
+              ? 'ready'
+              : (_tabSection == IssueTabSection.partial ? 'partial' : 'history'),
         );
         final issuesAv = ref.watch(pagedIssuesStreamProvider(query));
         return Scaffold(
@@ -364,34 +423,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
             ),
             actions: [
               if (canCreate) ...[
-                Consumer(
-                  builder: (context, ref, _) {
-                    final cart = ref.watch(storeCartProvider);
-                    return Badge.count(
-                      count: cart.lineCount,
-                      isLabelVisible: cart.lineCount > 0,
-                      backgroundColor: _ink900,
-                      textColor: _surface,
-                      child: IconButton(
-                        tooltip: 'Requisition Cart (${cart.lineCount})',
-                        style: IconButton.styleFrom(
-                          backgroundColor: _surfaceAlt,
-                          foregroundColor: _ink900,
-                        ),
-                        icon: const Icon(Icons.shopping_cart_outlined, size: 20),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const StoreCartPage(),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
+
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: IconButton.filled(
@@ -407,43 +439,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
               ],
             ],
           ),
-          floatingActionButtonLocation:
-              const _AbovePaginationFloatingActionButtonLocation(),
-          floatingActionButton: () {
-            final hasAccess =
-                user.isSuperAdmin ||
-                user.appWorks.contains("storeadmin") ||
-                user.appWorks.contains("storissueedit") ||
-                user.appWorks.contains("storissueadd") ||
-                user.appWorks.contains("storissuefromstock");
-
-            if (!hasAccess) return null;
-
-            return KeyedSubtree(
-              key: GuidedTourController.issueScanVerifyKey,
-              child: FloatingActionButton.small(
-                key: _scanKey,
-                tooltip: 'Scan for Issue Request',
-                onPressed: () {
-                  _dismissTourIfActive(uid: user.uid);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const QRCodeScannerIssuePage(),
-                    ),
-                  );
-                },
-                elevation: 4,
-                backgroundColor: _ink900,
-                foregroundColor: _surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: _stroke),
-                ),
-                child: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-              ),
-            );
-          }(),
+          
           body: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -500,8 +496,10 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                               if (rows.isEmpty) {
                                 return StoreEmptyStateWidget(
                                   message: _tabSection == IssueTabSection.ready
-                                      ? 'No pending or counter-ready requisitions found'
-                                      : 'No issued items history found',
+                                      ? 'No pending requisitions awaiting approval found'
+                                      : (_tabSection == IssueTabSection.partial
+                                          ? 'No approved requisitions ready for pickup found'
+                                          : 'No completed issue history found'),
                                   searchQuery: _search,
                                   onClearSearch:
                                       () => setState(() {
@@ -528,6 +526,7 @@ class _IssuesListPageState extends ConsumerState<IssuesListPage> {
                                     return _IssueCard(
                                       key: ValueKey(issue.id), // ✅ important
                                       isFirst: i == 0,
+                                      isHistory: _tabSection == IssueTabSection.history,
                                       issue: issue,
                                       onChanged:
                                           () => ref.invalidate(
@@ -669,12 +668,14 @@ class _IssueCard extends ConsumerStatefulWidget {
   const _IssueCard({
     super.key,
     this.isFirst = false,
+    this.isHistory = false,
     required this.issue,
     required this.user,
     required this.onChanged,
   });
 
   final bool isFirst;
+  final bool isHistory;
   final AuthModel user;
   final IssueModel issue;
   final VoidCallback onChanged;
@@ -684,7 +685,22 @@ class _IssueCard extends ConsumerStatefulWidget {
 }
 
 class __IssueCardState extends ConsumerState<_IssueCard> {
+  late bool _cardExpanded;
   bool _open = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cardExpanded = !widget.isHistory;
+  }
+
+  @override
+  void didUpdateWidget(covariant _IssueCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isHistory != widget.isHistory) {
+      _cardExpanded = !widget.isHistory;
+    }
+  }
 
   void _openFindItem(IssueLine line) {
     Navigator.push(
@@ -775,10 +791,10 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          builder:
-              (_) => IssueSheet(
+          builder: (_) => IssueSheet(
                 issue: issue,
                 onChanged: widget.onChanged,
+                targetItemId: line.itemId,
               ),
         );
       }
@@ -1002,6 +1018,8 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
     final isFullyPickedUp = !isRejected && totalApproved > 0 && totalIssued >= totalApproved;
     final unissuedCount = totalApproved - totalIssued;
     final canReject = !isRejected && totalIssued == 0;
+    final isIssueApproved =
+        !isRejected && (issue.isApproved || issue.approvedAt != null || totalApproved > 0);
 
     final filledStyle = FilledButton.styleFrom(
       backgroundColor: _accentMint.withValues(alpha: .65),
@@ -1063,7 +1081,12 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
+              InkWell(
+                onTap: () => setState(() => _cardExpanded = !_cardExpanded),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
                 children: [
                   Container(
                     width: 44,
@@ -1234,12 +1257,65 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
                             fontSize: 12,
                           ),
                         ),
+                        if (!_cardExpanded && issue.lines.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _surfaceAlt.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: _stroke),
+                            ),
+                            child: Text(
+                              '${issue.lines.length} ${issue.lines.length == 1 ? 'Item' : 'Items'} (${issue.totalRequested} units) • ${issue.lines.map((l) => l.itemName).where((s) => s.isNotEmpty).take(2).join(', ')}${issue.lines.length > 2 ? ' +${issue.lines.length - 2} more' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _ink900,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    duration: const Duration(milliseconds: 200),
+                    turns: _cardExpanded ? 0.5 : 0.0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _surfaceAlt.withValues(alpha: 0.45),
+                      ),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: _ink700,
+                        size: 22,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+            ),
+          ),
+          const SizedBox(height: 4),
+              AnimatedCrossFade(
+                duration: const Duration(milliseconds: 220),
+                crossFadeState:
+                    _cardExpanded
+                        ? CrossFadeState.showFirst
+                        : CrossFadeState.showSecond,
+                firstChild: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 10),
               _buildMilestoneAuditBox(issue, creatorName),
               const SizedBox(height: 10),
 
@@ -1255,7 +1331,8 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
                     lines: issue.lines,
                     initialExpanded: issue.lines.length <= 1,
                     onFindItem: canFindItem ? _openFindItem : null,
-                    onScanItem: (line) => _openScanItem(issue, line),
+                    onScanItem:
+                        isIssueApproved ? (line) => _openScanItem(issue, line) : null,
                   ),
                 ),
               ),
@@ -1491,6 +1568,10 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
               ),
               secondChild: const SizedBox.shrink(),
             ),
+                  ],
+                ),
+                secondChild: const SizedBox.shrink(),
+              ),
             ],
           ),
         );
@@ -1536,20 +1617,7 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
                   color: _ink900,
                 ),
               ),
-              const Spacer(),
-              if (issue.reason.isNotEmpty)
-                Flexible(
-                  child: Text(
-                    'Reason: ${issue.reason}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: _ink600,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+
             ],
           ),
           const SizedBox(height: 8),
@@ -2152,7 +2220,7 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
                     ),
                   ),
                 ),
-                if (widget.onScanItem != null)
+                if (widget.onScanItem != null && _i(row.approvedQty) > 0)
                   IconButton(
                     icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
                     color: _ink600,
@@ -2262,6 +2330,8 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
     final ret = _i(row.returnQty);
     final scrap = _i(row.scrapQty);
     final rej = _i(row.approvedRejectQty) + _i(row.issuedRejectQty);
+    final showScan = widget.onScanItem != null && _i(row.approvedQty) > 0;
+    final showFind = widget.onFindItem != null;
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -2296,7 +2366,7 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
                   ),
                 ),
               ),
-              if (widget.onScanItem != null)
+              if (showScan)
                 InkWell(
                   onTap: () => widget.onScanItem!(row),
                   borderRadius: BorderRadius.circular(6),
@@ -2309,9 +2379,9 @@ class _ItemsAccordionState extends State<_ItemsAccordion> {
                     ),
                   ),
                 ),
-              if (widget.onScanItem != null && widget.onFindItem != null)
+              if (showScan && showFind)
                 const SizedBox(width: 4),
-              if (widget.onFindItem != null)
+              if (showFind)
                 InkWell(
                   onTap: () => widget.onFindItem!(row),
                   borderRadius: BorderRadius.circular(6),

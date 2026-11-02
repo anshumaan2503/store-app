@@ -647,11 +647,11 @@ class __IssueCardState extends ConsumerState<_IssueCard> {
                                 context: context,
                                 isScrollControlled: true,
                                 backgroundColor: Colors.transparent,
-                                builder:
-                                    (_) => IssueSheet(
-                                      issue: widget.issue,
-                                      onChanged: widget.onChanged,
-                                    ),
+                                builder: (_) => IssueSheet(
+    issue: widget.issue,
+    onChanged: widget.onChanged,
+    targetItemId: widget.item.id,
+  ),
                               );
                             }
                             : null,
@@ -767,10 +767,16 @@ class _TableDataCell extends StatelessWidget {
 /* ---------------- Issue Sheet (line-by-line issue + bulk) ---------------- */
 
 class IssueSheet extends ConsumerStatefulWidget {
-  const IssueSheet({super.key, required this.issue, required this.onChanged});
+  const IssueSheet({
+    super.key,
+    required this.issue,
+    required this.onChanged,
+    this.targetItemId,
+  });
 
   final IssueModel issue;
   final VoidCallback onChanged;
+  final String? targetItemId;
 
   @override
   ConsumerState<IssueSheet> createState() => _IssueSheetState();
@@ -790,7 +796,13 @@ class _IssueSheetState extends ConsumerState<IssueSheet> {
   @override
   void initState() {
     super.initState();
-    _lines = List<IssueLine>.from(widget.issue.lines);
+    final tId = widget.targetItemId?.trim();
+    if (tId != null && tId.isNotEmpty) {
+      final filtered = widget.issue.lines.where((l) => l.itemId == tId).toList();
+      _lines = filtered.isNotEmpty ? filtered : List<IssueLine>.from(widget.issue.lines);
+    } else {
+      _lines = List<IssueLine>.from(widget.issue.lines);
+    }
 
     for (final l in _lines) {
       final ri = _remainIssue(l);

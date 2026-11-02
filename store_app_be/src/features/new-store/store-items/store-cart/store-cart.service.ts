@@ -32,7 +32,7 @@ export class StoreCartService implements OnModuleInit {
     monthEndRevertEnabled: true,
     monthEndRevertDays: 30,
     indentApprovalRequired: false,
-    grnWorkflowEnabled: false,
+    grnWorkflowEnabled: true,
     indentAutoCloseDays: 30,
     indentAutoCloseEnabled: true,
   };
@@ -66,6 +66,7 @@ export class StoreCartService implements OnModuleInit {
           requestTimeoutDays: 7,
           requestTimeoutEnabled: true,
           monthEndRevertEnabled: true,
+          grnWorkflowEnabled: true,
         });
         this.cachedConfig = {
           cartTimeoutMinutes: Number(created?.cartTimeoutMinutes) || 5,
@@ -75,7 +76,7 @@ export class StoreCartService implements OnModuleInit {
           monthEndRevertEnabled: created?.monthEndRevertEnabled !== false,
           monthEndRevertDays: Number(created?.monthEndRevertDays) || 30,
           indentApprovalRequired: Boolean(created?.indentApprovalRequired),
-          grnWorkflowEnabled: Boolean(created?.grnWorkflowEnabled),
+          grnWorkflowEnabled: created?.grnWorkflowEnabled !== false,
           indentAutoCloseDays: Number(created?.indentAutoCloseDays) || 30,
           indentAutoCloseEnabled: created?.indentAutoCloseEnabled !== false,
           updatedBy: created?.updatedBy,
@@ -90,7 +91,7 @@ export class StoreCartService implements OnModuleInit {
           monthEndRevertEnabled: cfg.monthEndRevertEnabled !== false,
           monthEndRevertDays: Number(cfg.monthEndRevertDays) || 30,
           indentApprovalRequired: Boolean(cfg.indentApprovalRequired),
-          grnWorkflowEnabled: Boolean(cfg.grnWorkflowEnabled),
+          grnWorkflowEnabled: cfg.grnWorkflowEnabled !== false,
           indentAutoCloseDays: Number(cfg.indentAutoCloseDays) || 30,
           indentAutoCloseEnabled: cfg.indentAutoCloseEnabled !== false,
           updatedBy: cfg.updatedBy,

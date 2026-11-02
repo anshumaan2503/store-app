@@ -149,13 +149,20 @@ export class StoreNewItemController {
     @Param('id') id: string,
     @Body() dto: UploadBase64Dto,
   ) {
-    const { imageUrl, entity } = await this.s.uploadImageBase64(
-      'receive',
-      id,
-      dto.base64,
-      'store-receive',
-    );
-    return { success: true, imageUrl, entity };
+    try {
+      const { imageUrl, entity } = await this.s.uploadImageBase64(
+        'receive',
+        id,
+        dto.base64,
+        'store-receive',
+      );
+      return { success: true, imageUrl, entity };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Picture upload failed',
+      };
+    }
   }
 
   @Get('by-item-scrap/:id')

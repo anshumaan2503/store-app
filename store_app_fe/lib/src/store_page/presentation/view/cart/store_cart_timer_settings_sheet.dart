@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:store_app/src/auth/shared/providers/auth_model_provider.dart';
 import '../../../controllers/store_cart_controller.dart';
+import 'package:store_app/src/store_page/controllers/scanner_settings_controller.dart';
 
 /* ---------------- Palette ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -76,6 +77,11 @@ class _StoreCartTimerSettingsSheetState
   late bool _indentAutoCloseEnabled;
   late int _indentAutoCloseDays;
 
+  // Option 7: Scanner QR Filters
+  late ScannerTargetMode _receiveScannerMode;
+  late ScannerTargetMode _putawayScannerMode;
+  late ScannerTargetMode _issueScannerMode;
+
   bool _saving = false;
 
   @override
@@ -92,11 +98,27 @@ class _StoreCartTimerSettingsSheetState
     _grnWorkflowEnabled = config.grnWorkflowEnabled;
     _indentAutoCloseEnabled = config.indentAutoCloseEnabled;
     _indentAutoCloseDays = config.indentAutoCloseDays;
+
+    final scannerSettings = ref.read(scannerSettingsProvider);
+    _receiveScannerMode = scannerSettings.receiveMode;
+    _putawayScannerMode = scannerSettings.putawayMode;
+    _issueScannerMode = scannerSettings.issueMode;
   }
 
   Future<void> _handleSave() async {
     setState(() => _saving = true);
     final auth = ref.read(authModelProvider);
+
+    await ref
+        .read(scannerSettingsProvider.notifier)
+        .setMode(ScannerWorkflow.receive, _receiveScannerMode);
+    await ref
+        .read(scannerSettingsProvider.notifier)
+        .setMode(ScannerWorkflow.putaway, _putawayScannerMode);
+    await ref
+        .read(scannerSettingsProvider.notifier)
+        .setMode(ScannerWorkflow.issue, _issueScannerMode);
+
     final success =
         await ref.read(storeCartConfigProvider.notifier).updateConfig(
               minutes: _cartMinutes,
@@ -394,6 +416,10 @@ class _StoreCartTimerSettingsSheetState
                           )
                         : null,
                   ),
+                  const SizedBox(height: 12),
+
+                  // 7. Scanner QR Filters
+                  _buildScannerFiltersCard(),
                 ],
               ),
             ),
@@ -826,6 +852,176 @@ class _StoreCartTimerSettingsSheetState
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildScannerFiltersCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _ink900.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: _ink900,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Scanner QR Filters',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: _ink900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Control accepted QR types (Item, Place, or Both) per workflow',
+                      style: TextStyle(fontSize: 11, color: _ink600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 1. Receive Scanner
+          _buildScannerWorkflowRadioGroup(
+            title: 'Receive Scanner',
+            icon: Icons.move_to_inbox_rounded,
+            currentMode: _receiveScannerMode,
+            onChanged: (mode) => setState(() => _receiveScannerMode = mode),
+          ),
+          const Divider(height: 20, color: _stroke),
+
+          // 2. Put Away Scanner
+          _buildScannerWorkflowRadioGroup(
+            title: 'Put Away Scanner',
+            icon: Icons.archive_outlined,
+            currentMode: _putawayScannerMode,
+            onChanged: (mode) => setState(() => _putawayScannerMode = mode),
+          ),
+          const Divider(height: 20, color: _stroke),
+
+          // 3. Issue Scanner
+          _buildScannerWorkflowRadioGroup(
+            title: 'Issue Scanner',
+            icon: Icons.outbox_rounded,
+            currentMode: _issueScannerMode,
+            onChanged: (mode) => setState(() => _issueScannerMode = mode),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScannerWorkflowRadioGroup({
+    required String title,
+    required IconData icon,
+    required ScannerTargetMode currentMode,
+    required ValueChanged<ScannerTargetMode> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 15, color: _ink700),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _ink900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          children: [
+            _buildRadioButton(
+              label: 'Item only',
+              mode: ScannerTargetMode.itemOnly,
+              currentMode: currentMode,
+              onChanged: onChanged,
+            ),
+            _buildRadioButton(
+              label: 'Place only',
+              mode: ScannerTargetMode.placeOnly,
+              currentMode: currentMode,
+              onChanged: onChanged,
+            ),
+            _buildRadioButton(
+              label: 'Both',
+              mode: ScannerTargetMode.both,
+              currentMode: currentMode,
+              onChanged: onChanged,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRadioButton({
+    required String label,
+    required ScannerTargetMode mode,
+    required ScannerTargetMode currentMode,
+    required ValueChanged<ScannerTargetMode> onChanged,
+  }) {
+    final isSelected = currentMode == mode;
+    return InkWell(
+      onTap: () => onChanged(mode),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              size: 17,
+              color: isSelected ? _ink900 : _ink600,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                color: isSelected ? _ink900 : _ink700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

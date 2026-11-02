@@ -48,6 +48,17 @@ class _StockRefillRequestsListViewState
   final _scrollController = ScrollController();
   String _sourceFilter = 'ALL'; // 'ALL' | 'AUTO' | 'REQUESTER'
   bool _isExecutingEod = false;
+  final Set<String> _expandedRequestIds = {};
+
+  void _toggleRequestExpanded(String id) {
+    setState(() {
+      if (_expandedRequestIds.contains(id)) {
+        _expandedRequestIds.remove(id);
+      } else {
+        _expandedRequestIds.add(id);
+      }
+    });
+  }
 
   Timer? _debounceTimer;
   final List<String> _subscribedEvents = const [
@@ -1651,6 +1662,7 @@ class _StockRefillRequestsListViewState
     final indentNum = req.indentNumber.isNotEmpty
         ? req.indentNumber
         : req.requestNo;
+    final isExpanded = _expandedRequestIds.contains(req.id);
 
     return Card(
       color: _surface,
@@ -1658,17 +1670,26 @@ class _StockRefillRequestsListViewState
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: _stroke),
+        side: BorderSide(
+          color: isExpanded ? const Color(0xFFB0BEC5) : _stroke,
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Row: Indent Number + Source Tag + Status Badge
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Bar (Tappable Accordion Header)
+          InkWell(
+            onTap: () => _toggleRequestExpanded(req.id),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Row: Indent Number + Source Tag + Status Badge
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
                 Expanded(
                   child: Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
@@ -1834,28 +1855,50 @@ class _StockRefillRequestsListViewState
                     ],
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(statusIcon, size: 12, color: statusFg),
-                      const SizedBox(width: 4),
-                      Text(
-                        req.status,
-                        style: TextStyle(
-                          color: statusFg,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusIcon, size: 12, color: statusFg),
+                          const SizedBox(width: 4),
+                          Text(
+                            req.status,
+                            style: TextStyle(
+                              color: statusFg,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: _surfaceAlt.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: AnimatedRotation(
+                        turns: isExpanded ? 0.5 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: _ink700,
+                          size: 20,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1975,7 +2018,23 @@ class _StockRefillRequestsListViewState
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    ),
+          // Collapsible Body Section
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 1, color: _stroke),
+                  const SizedBox(height: 10),
 
             // Stock Details at request time
             Container(
@@ -2384,6 +2443,10 @@ class _StockRefillRequestsListViewState
                                   initialItemId: req.itemId,
                                   initialIndentId: req.id,
                                   initialIndentQty: req.indentQty,
+                                  initialIndentNumber: req.indentNumber.isNotEmpty
+                                      ? req.indentNumber
+                                      : req.requestNo,
+                                  isPutaway: true,
                                 ),
                               ),
                             );
@@ -2615,6 +2678,10 @@ class _StockRefillRequestsListViewState
             ],
           ],
         ),
+      ),
+            secondChild: const SizedBox(width: double.infinity, height: 0),
+          ),
+        ],
       ),
     );
   }

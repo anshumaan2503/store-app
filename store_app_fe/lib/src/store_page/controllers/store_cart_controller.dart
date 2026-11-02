@@ -226,7 +226,7 @@ class StoreCartConfig {
     this.monthEndRevertEnabled = true,
     this.monthEndRevertDays = 30,
     this.indentApprovalRequired = false,
-    this.grnWorkflowEnabled = false,
+    this.grnWorkflowEnabled = true,
     this.indentAutoCloseDays = 30,
     this.indentAutoCloseEnabled = true,
   });
@@ -291,8 +291,10 @@ class StoreCartConfig {
           int.tryParse(map['monthEndRevertDays']?.toString() ?? '30') ?? 30,
       indentApprovalRequired: map['indentApprovalRequired'] == true ||
           map['indentApprovalRequired'].toString() == 'true',
-      grnWorkflowEnabled: map['grnWorkflowEnabled'] == true ||
-          map['grnWorkflowEnabled'].toString() == 'true',
+      grnWorkflowEnabled: map['grnWorkflowEnabled'] == null
+          ? true
+          : (map['grnWorkflowEnabled'] == true ||
+              map['grnWorkflowEnabled'].toString() == 'true'),
       indentAutoCloseDays:
           int.tryParse(map['indentAutoCloseDays']?.toString() ?? '30') ?? 30,
       indentAutoCloseEnabled: map['indentAutoCloseEnabled'] == null

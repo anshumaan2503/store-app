@@ -50,6 +50,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
   @override
   void initState() {
     super.initState();
+    _rackQtyCtrl.text = '0';
 
     _item = StoreItemsModel(
       id: "",
@@ -132,30 +133,103 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
   void _showImageSourceSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      elevation: 8,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
-              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
-              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _stroke,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Select Photo Source',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _ink900,
+                  ),
+                ),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.camera_alt_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Take Photo',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Capture using camera',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.photo_library_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Choose from Gallery',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Select from photos',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -249,8 +323,13 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
         return;
       }
 
+      bool imageUploaded = true;
       if (_pickedImage != null) {
-        await _uploadPickedImage(receiveId);
+        try {
+          await _uploadPickedImage(receiveId);
+        } catch (_) {
+          imageUploaded = false;
+        }
       }
 
       _refresh();
@@ -264,7 +343,11 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
         _pickedBytes = null;
       });
 
-      _snack('Item received successfully');
+      if (imageUploaded) {
+        _snack('Item received successfully');
+      } else {
+        _snack('Item received successfully (picture not uploaded)');
+      }
       Navigator.pop(context, true);
     } catch (e) {
       _snack('Failed: $e');
@@ -275,7 +358,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
     }
   }
 
-  Widget _buildIndentSelector(String itemId) {
+  Widget _buildIndentSelector(String itemId, {required bool rackReady}) {
     final indentsAv = ref.watch(uncreditedApprovedIndentsProvider(itemId));
 
     return indentsAv.when(
@@ -302,6 +385,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
       error: (_, __) => const SizedBox.shrink(),
       data: (indents) {
         if (indents.isEmpty) {
+
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -316,11 +400,11 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'No pending approved indents for this item (Direct Stock In)',
+                    'No pending approved indents for this item (Receive Qty: 0)',
                     style: TextStyle(
                       fontSize: 11,
                       color: _ink600,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -328,6 +412,8 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
             ),
           );
         }
+
+
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -378,6 +464,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                         setState(() {
                           _selectedIndentId = null;
                           _directToAvailable = true;
+                          _rackQtyCtrl.text = '0';
                         });
                       },
                       child: const Text(
@@ -392,19 +479,20 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                 ],
               ),
               const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                key: ValueKey(_selectedIndentId),
+              DropdownButtonFormField<String?>(
                 isExpanded: true,
-                initialValue: _selectedIndentId,
+                value: _selectedIndentId,
                 dropdownColor: Colors.white,
                 style: const TextStyle(
                   color: _ink900,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
-                hint: const Text(
-                  'Select approved indent (Origin determines destination)',
-                  style: TextStyle(fontSize: 11.5, color: _ink600),
+                hint: Text(
+                  !rackReady
+                      ? 'Select a rack above to enable indent selection'
+                      : 'Select approved indent (Origin determines destination)',
+                  style: const TextStyle(fontSize: 11.5, color: _ink600),
                 ),
                 decoration: InputDecoration(
                   filled: true,
@@ -421,13 +509,61 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: _stroke),
                   ),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _stroke.withValues(alpha: 0.6)),
+                  ),
                 ),
+                selectedItemBuilder: (ctx) {
+                  return [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'None (No Indent Selected • Qty: 0)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _ink600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    ...indents.map((ind) {
+                      final reqName =
+                          ind.requestedBy.isNotEmpty ? ind.requestedBy : 'Requester';
+                      final numStr = ind.indentNumber.isNotEmpty
+                          ? ind.indentNumber
+                          : ind.requestNo;
+                      final originTag = ind.isIssueShortage
+                          ? 'Shortage ($reqName)'
+                          : (ind.isAutoRefill ? 'Auto Refill' : 'Store Refill');
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '$numStr • Qty: ${ind.indentQty} • $originTag',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: _ink900,
+                          ),
+                        ),
+                      );
+                    }),
+                  ];
+                },
                 items: [
-                  const DropdownMenuItem<String>(
+                  const DropdownMenuItem<String?>(
                     value: null,
                     child: Text(
-                      'None (General Direct In ➔ Available Stock)',
-                      style: TextStyle(fontSize: 12, color: _ink600),
+                      'None (No Indent Selected • Qty: 0)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _ink600,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   ...indents.map((ind) {
@@ -441,7 +577,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                         : (ind.isAutoRefill
                             ? '🟣 AUTO REFILL ➔ Available'
                             : '🟢 STORE REFILL ➔ Available');
-                    return DropdownMenuItem<String>(
+                    return DropdownMenuItem<String?>(
                       value: ind.id,
                       child: Text(
                         '$numStr • Qty: ${ind.indentQty} • $originTag',
@@ -455,24 +591,27 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                     );
                   }),
                 ],
-                onChanged: (val) {
-                  setState(() {
-                    _selectedIndentId = val;
-                    if (val != null) {
-                      final matched =
-                          indents.where((x) => x.id == val).toList();
-                      if (matched.isNotEmpty) {
-                        _rackQtyCtrl.text = '${matched.first.indentQty}';
-                        // 🌟 Locked System Routing:
-                        // Issue demand shortage -> Reserved for requester
-                        // Store refill or Auto refill -> Available Stock
-                        _directToAvailable = !matched.first.isIssueShortage;
-                      }
-                    } else {
-                      _directToAvailable = true;
-                    }
-                  });
-                },
+                onChanged: !rackReady
+                    ? null
+                    : (val) {
+                        setState(() {
+                          _selectedIndentId = val;
+                          if (val != null) {
+                            final matched =
+                                indents.where((x) => x.id == val).toList();
+                            if (matched.isNotEmpty) {
+                              _rackQtyCtrl.text = '${matched.first.indentQty}';
+                              // 🌟 Locked System Routing:
+                              // Issue demand shortage -> Reserved for requester
+                              // Store refill or Auto refill -> Available Stock
+                              _directToAvailable = !matched.first.isIssueShortage;
+                            }
+                          } else {
+                            _directToAvailable = true;
+                            _rackQtyCtrl.text = '0';
+                          }
+                        });
+                      },
               ),
               if (_selectedIndentId != null) ...[
                 Builder(
@@ -819,25 +958,73 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                         DropdownButtonFormField<String>(
                           initialValue: _selectedRackId,
                           isExpanded: true,
+                          iconEnabledColor: _ink900,
+                          iconDisabledColor: _ink600,
+                          dropdownColor: _surface,
                           style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w500,
+                            color: _ink900,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
                           ),
-                          dropdownColor: Colors.white,
-                          decoration: const InputDecoration(
-                            prefixIcon: Icon(
+                          hint: const Text(
+                            'Select Rack',
+                            style: TextStyle(
+                              color: _ink600,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          selectedItemBuilder: (ctx) {
+                            return list.map((r) {
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${r["code"]} • ${r["roomName"]}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: _ink900,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13.5,
+                                  ),
+                                ),
+                              );
+                            }).toList();
+                          },
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            prefixIcon: const Icon(
                               Icons.view_module_rounded,
-                              color: Colors.black,
+                              color: _ink900,
+                              size: 20,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
                             ),
                             hintText: 'Select Rack',
+                            hintStyle: const TextStyle(
+                              color: _ink600,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
                             filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(),
+                            fillColor: _surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: _stroke, width: 1.2),
+                            ),
                             enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.black26),
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: _stroke, width: 1.2),
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.black),
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: _ink900, width: 1.5),
                             ),
                           ),
                           items:
@@ -847,8 +1034,9 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                   child: Text(
                                     '${r["code"]} • ${r["roomName"]}',
                                     style: const TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.w500,
+                                      color: _ink900,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
                                     ),
                                   ),
                                 );
@@ -944,7 +1132,7 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                     value: '${_item.totalStockQuantity}',
                                   ),
                                   const SizedBox(height: 10),
-                                  _buildIndentSelector(widget.itemId),
+                                  _buildIndentSelector(widget.itemId, rackReady: rackReady),
                                   const SizedBox(height: 8),
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -973,12 +1161,13 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                       const SizedBox(height: 6),
                                       TextField(
                                         controller: _rackQtyCtrl,
+                                        readOnly: true,
+                                        enableInteractiveSelection: false,
                                         keyboardType: TextInputType.number,
-                                        cursorColor: _ink900,
                                         style: const TextStyle(
                                           color: _ink900,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 15,
                                         ),
                                         decoration: InputDecoration(
                                           isDense: true,
@@ -987,15 +1176,23 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                             vertical: 12,
                                           ),
                                           prefixIcon: const Icon(
-                                            Icons.add_shopping_cart_rounded,
-                                            color: Color(0xFF2E7D32),
+                                            Icons.inventory_2_rounded,
+                                            color: _ink900,
                                             size: 19,
                                           ),
                                           prefixIconConstraints: const BoxConstraints(
                                             minWidth: 38,
                                             minHeight: 38,
                                           ),
-                                          hintText: 'Enter receive quantity (e.g. 10)',
+                                          suffixIcon: const Tooltip(
+                                            message: 'Locked to matching indent quantity',
+                                            child: Icon(
+                                              Icons.lock_rounded,
+                                              size: 16,
+                                              color: _ink600,
+                                            ),
+                                          ),
+                                          hintText: '0',
                                           hintStyle: const TextStyle(
                                             color: _ink600,
                                             fontSize: 13,
@@ -1008,12 +1205,12 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                             fontWeight: FontWeight.w600,
                                           ),
                                           floatingLabelStyle: const TextStyle(
-                                            color: Color(0xFF1B5E20),
+                                            color: _ink900,
                                             fontSize: 12.5,
                                             fontWeight: FontWeight.w800,
                                           ),
                                           filled: true,
-                                          fillColor: Colors.white,
+                                          fillColor: const Color(0xFFF7F6F2),
                                           border: OutlineInputBorder(
                                             borderRadius: BorderRadius.circular(10),
                                             borderSide: const BorderSide(color: _stroke, width: 1.2),
@@ -1025,8 +1222,8 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                           focusedBorder: OutlineInputBorder(
                                             borderRadius: BorderRadius.circular(10),
                                             borderSide: const BorderSide(
-                                              color: Color(0xFF2E7D32),
-                                              width: 1.8,
+                                              color: _ink900,
+                                              width: 1.5,
                                             ),
                                           ),
                                         ),
@@ -1037,8 +1234,19 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                   _buildImagePicker(),
                                   const SizedBox(height: 12),
                                   FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: _ink900,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor: _ink900.withValues(alpha: 0.35),
+                                      disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      elevation: 1,
+                                    ),
                                     onPressed:
-                                        (_busy || !rackReady)
+                                        (_busy || !rackReady || (int.tryParse(_rackQtyCtrl.text.trim()) ?? 0) <= 0)
                                             ? null
                                             : () => _confirmReceiveItem(
                                               rackId:
@@ -1056,13 +1264,21 @@ class _ScanItemReceivePageState extends ConsumerState<ScanItemReceivePage> {
                                                 strokeWidth: 2,
                                               ),
                                             )
-                                            : const Icon(Icons.check_rounded),
+                                            : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
                                     label: Text(
                                       _busy
                                           ? 'Adding...'
-                                          : (rackReady
-                                              ? 'Add Item'
-                                              : 'Select Rack'),
+                                          : (!rackReady
+                                              ? 'Select Rack'
+                                              : ((int.tryParse(_rackQtyCtrl.text.trim()) ?? 0) <= 0
+                                                  ? 'No Indent to Receive'
+                                                  : 'Add Item')),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: 0.3,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 12),

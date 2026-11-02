@@ -32,7 +32,7 @@ export class StoreCartConfig extends Document {
   indentApprovalRequired: boolean;
 
   // GRN Workflow Switch: Require GRN Cart inspection & approval before QR scan putaway
-  @Prop({ default: false })
+  @Prop({ default: true })
   grnWorkflowEnabled: boolean;
 
   // Auto-close stale indents after 1 month (30 days default)

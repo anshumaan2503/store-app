@@ -3637,10 +3637,19 @@ export class IssueService {
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (tab === 'ready') {
-      filter.status = { $nin: ['CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] };
+      // 1. Ready for Issue: Brand new requests awaiting approval
+      filter.status = { $nin: ['APPROVED', 'CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] };
+      filter.closedAt = null;
+    } else if (tab === 'partial') {
+      // 2. Partial Issued: Approved and ready for pickup / partially issued
+      filter.status = 'APPROVED';
       filter.closedAt = null;
     } else if (tab === 'history') {
-      filter.status = { $in: ['CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] };
+      // 3. Issue History: Completed or cancelled/rejected
+      filter.$or = [
+        { status: { $in: ['CLOSED', 'REJECTED', 'EXPIRED', 'CANCELLED'] } },
+        { closedAt: { $ne: null } },
+      ];
     }
 
     if (createdByRaw) {

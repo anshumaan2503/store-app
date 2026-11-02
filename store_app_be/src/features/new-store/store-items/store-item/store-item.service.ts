@@ -239,9 +239,14 @@ export class StoreNewItemService {
       throw new BadRequestException('Invalid identity');
     }
 
-    await minioClient.putObject(this.bucketName, key, buffer, {
-      'Content-Type': mime,
-    });
+    try {
+      await minioClient.putObject(this.bucketName, key, buffer, {
+        'Content-Type': mime,
+      });
+    } catch (minioErr: any) {
+      console.error('[uploadImageBase64] MinIO upload error:', minioErr?.message || minioErr);
+      throw new BadRequestException('Storage service unavailable: unable to upload image');
+    }
 
     const imageUrl = `https://minioimg.rrispat.in/${this.bucketName}/${key}`;
     entity.imageUrl = imageUrl;
@@ -772,7 +777,68 @@ export class StoreNewItemService {
 
     const operatedBy = this.mustOperatorId(receivedBy, 'receivedBy');
 
-    const lockKey = dto.requestId || dto.recNo;
+    // Enforce indent putaway rule: Stock must only be placed in the same rack where its original stock already exists
+    if (dto.indentId) {
+      const existingRacks = await this.rackModel
+        .find({ itemId: String(itemId), isActive: false })
+        .lean();
+      const existingQtyRacks = await this.itemRackQtyModel
+        .find({ itemId: String(itemId), totalStockQuantity: { $gt: 0 } })
+        .lean();
+
+      const itemDoc: any = await this.model.findById(this.oid(itemId)).lean();
+      const itemRackIds: string[] = Array.isArray(itemDoc?.rackId)
+        ? itemDoc.rackId.filter((id: any) => Boolean(id)).map((id: any) => String(id))
+        : [];
+
+      const allowedRackIds = new Set<string>([
+        ...existingRacks.map((r: any) => String(r._id)),
+        ...existingQtyRacks.map((q: any) => String(q.rackId)),
+        ...itemRackIds,
+      ]);
+
+      if (allowedRackIds.size > 0 && !allowedRackIds.has(String(rackId))) {
+        let assignedRackCode = '';
+        if (existingRacks.length > 0) {
+          assignedRackCode = existingRacks[0].code || existingRacks[0].rackName;
+        } else {
+          const firstAllowed = await this.rackModel
+            .findById(Array.from(allowedRackIds)[0])
+            .lean();
+          assignedRackCode =
+            firstAllowed?.code || firstAllowed?.rackName || 'assigned rack';
+        }
+        throw new BadRequestException(
+          `Item is assigned to ${assignedRackCode}. Newly received indent stock must be placed only in the same rack where its original stock exists.`,
+        );
+      }
+    }
+
+    // Check if indent was already fulfilled/received
+    if (dto.indentId && this.indentRaiseService) {
+      try {
+        const indent = await this.indentRaiseService.findOne(dto.indentId);
+        if (indent) {
+          if (indent.stockCredited) {
+            return {
+              status: true,
+              duplicate: true,
+              msg: 'This indent request has already been fulfilled and received.',
+              id: indent.receiveDocId || '',
+            };
+          }
+          if (indent.status !== 'APPROVED') {
+            throw new BadRequestException(
+              `Indent cannot be received. Current status is ${indent.status}`,
+            );
+          }
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+      }
+    }
+
+    const lockKey = dto.requestId || dto.recNo || (dto.indentId ? `indent_${dto.indentId}` : undefined);
     console.log(`[DEBUG RECEIVE_ITEM]: dto.requestId=${dto.requestId}, dto.recNo=${dto.recNo}, lockKey=${lockKey}, inflightHas=${lockKey ? this.inflightReceives.has(lockKey) : false}`);
     if (lockKey) {
       if (this.inflightReceives.has(lockKey)) {

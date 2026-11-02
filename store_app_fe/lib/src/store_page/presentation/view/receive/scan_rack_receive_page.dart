@@ -12,7 +12,9 @@ import '../../../controllers/store_receive_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../../../domains/models/store_rack_model.dart';
 import '../../../controllers/stock_refill_request_controller.dart';
+import '../../../domains/models/stock_refill_request_model.dart';
 import '../../../controllers/store_cart_controller.dart';
+import '../../../controllers/store_rack_controller.dart';
 
 const _ink900 = Color(0xFF282321);
 const _ink700 = Color(0xFF4D4542);
@@ -29,6 +31,7 @@ class ScanRackReceivePage extends ConsumerStatefulWidget {
   final String? initialItemId;
   final String? initialIndentId;
   final num? initialIndentQty;
+  final String? initialIndentNumber;
 
   const ScanRackReceivePage({
     super.key,
@@ -36,6 +39,7 @@ class ScanRackReceivePage extends ConsumerStatefulWidget {
     this.initialItemId,
     this.initialIndentId,
     this.initialIndentQty,
+    this.initialIndentNumber,
   });
 
   @override
@@ -47,6 +51,8 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
   late StoreRack _rack;
 
   bool _busy = false;
+  bool _hasSubmitted = false;
+  StockRefillRequestModel? _cachedBoundIndent;
   final TextEditingController _rackQtyCtrl = TextEditingController();
   final TextEditingController _unitPriceCtrl = TextEditingController();
   final TextEditingController _imageUrlCtrl = TextEditingController();
@@ -150,30 +156,103 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
   void _showImageSourceSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      elevation: 8,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined, color: _ink900),
-              title: const Text('Take Photo', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: _ink900),
-              title: const Text('Choose from Gallery', style: TextStyle(color: _ink900, fontWeight: FontWeight.w700)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: _stroke,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Select Photo Source',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _ink900,
+                  ),
+                ),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.camera_alt_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Take Photo',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Capture using camera',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: _stroke, width: 1),
+                ),
+                tileColor: _surfaceAlt.withValues(alpha: 0.6),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.photo_library_rounded, color: _ink900, size: 22),
+                ),
+                title: const Text(
+                  'Choose from Gallery',
+                  style: TextStyle(color: _ink900, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Select from photos',
+                  style: TextStyle(color: _ink600, fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: _ink600),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -228,6 +307,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
     required String itemId,
     required TextEditingController qtyCtrl,
   }) async {
+    if (_busy || _hasSubmitted) return;
     final isGrnEnabled = ref.read(storeCartConfigProvider).grnWorkflowEnabled;
     int qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
     if (qty <= 0 && widget.initialIndentQty != null && widget.initialIndentQty! > 0) {
@@ -258,6 +338,30 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
 
       final unitPrice = double.tryParse(_unitPriceCtrl.text.trim());
 
+      if (_selectedIndentId != null && _selectedIndentId!.isNotEmpty) {
+        try {
+          final assignedRacks = await ref
+              .read(storeRackControllerProvider)
+              .getRacksByItem(itemId);
+          if (assignedRacks.isNotEmpty) {
+            final isMatch = assignedRacks.any((r) =>
+                (r['_id'] ?? r['id'])?.toString() == widget.rackId ||
+                (r['code'] ?? '')?.toString().toUpperCase() == widget.rackId.toUpperCase() ||
+                (r['rackName'] ?? '')?.toString().toUpperCase() == widget.rackId.toUpperCase());
+            if (!isMatch) {
+              final assignedCodes = assignedRacks
+                  .map((r) =>
+                      r['code']?.toString() ?? r['rackName']?.toString() ?? '')
+                  .where((s) => s.isNotEmpty)
+                  .join(', ');
+              _snack('Wrong Rack! This item is assigned in some other rack ($assignedCodes). Newly received stock must be placed in the same rack.');
+              setState(() => _busy = false);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
       final success = await ref
           .read(storeReceiveControllerProvider)
           .receiveItem(
@@ -274,11 +378,19 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
       final receiveId = (success["id"] ?? '').toString();
 
       if (!ok || receiveId.isEmpty) {
+        setState(() => _busy = false);
         return;
       }
 
+      _hasSubmitted = true;
+
+      bool imageUploaded = true;
       if (_pickedImage != null) {
-        await _uploadPickedImage(receiveId);
+        try {
+          await _uploadPickedImage(receiveId);
+        } catch (_) {
+          imageUploaded = false;
+        }
       }
 
       _refresh();
@@ -292,7 +404,11 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
         _pickedBytes = null;
       });
 
-      _snack('Item received successfully');
+      if (imageUploaded) {
+        _snack('Item received successfully');
+      } else {
+        _snack('Item received successfully (picture not uploaded)');
+      }
 
       Navigator.pop(context, true);
     } finally {
@@ -327,17 +443,20 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
       ),
       error: (_, __) => const SizedBox.shrink(),
       data: (indents) {
-        if (_selectedIndentId != null && (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0')) {
+        if (_selectedIndentId != null) {
           final matched = indents.where((x) => x.id == _selectedIndentId).toList();
           if (matched.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0')) {
-                setState(() {
-                  _rackQtyCtrl.text = '${matched.first.indentQty}';
-                  _directToAvailable = !matched.first.isIssueShortage;
-                });
-              }
-            });
+            _cachedBoundIndent = matched.first;
+            if (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0') {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && (_rackQtyCtrl.text.isEmpty || _rackQtyCtrl.text == '0')) {
+                  setState(() {
+                    _rackQtyCtrl.text = '${matched.first.indentQty}';
+                    _directToAvailable = !matched.first.isIssueShortage;
+                  });
+                }
+              });
+            }
           }
         }
         if (indents.isEmpty && !isInitialIndentBound) {
@@ -436,15 +555,24 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                 Builder(
                   builder: (_) {
                     final matched = indents.where((x) => x.id == _selectedIndentId).toList();
-                    final selectedIndent = matched.isNotEmpty ? matched.first : null;
+                    if (matched.isNotEmpty) {
+                      _cachedBoundIndent = matched.first;
+                    }
+                    final selectedIndent = matched.isNotEmpty ? matched.first : _cachedBoundIndent;
                     final reqName = (selectedIndent?.requestedBy.isNotEmpty == true)
                         ? selectedIndent!.requestedBy
                         : 'Requester';
                     final numStr = selectedIndent != null
                         ? (selectedIndent.indentNumber.isNotEmpty
                             ? selectedIndent.indentNumber
-                            : selectedIndent.requestNo)
-                        : (_selectedIndentId ?? '');
+                            : (selectedIndent.requestNo.isNotEmpty
+                                ? selectedIndent.requestNo
+                                : (widget.initialIndentNumber?.isNotEmpty == true
+                                    ? widget.initialIndentNumber!
+                                    : 'Indent Refill')))
+                        : (widget.initialIndentNumber?.isNotEmpty == true
+                            ? widget.initialIndentNumber!
+                            : 'Indent Refill');
                     final originTag = selectedIndent != null
                         ? (selectedIndent.isIssueShortage
                             ? 'SHORTAGE ($reqName) ➔ Reserved'
@@ -1501,7 +1629,7 @@ class _ScanRackReceivePageState extends ConsumerState<ScanRackReceivePage> {
                                   elevation: 1,
                                 ),
                                 onPressed:
-                                    (_busy || !itemReady)
+                                    (_busy || _hasSubmitted || !itemReady)
                                         ? null
                                         : () => _confirmReceiveItem(
                                           itemId: selectedItem.id,

@@ -22,6 +22,12 @@ enum ItemBreakdownTab {
   readyForIssue,
   pickedUp,
   rejected,
+  lots,
+  history,
+}
+
+enum ItemBreakdownSection {
+  realTime,
   history,
 }
 
@@ -65,6 +71,7 @@ class ItemActivityBreakdownSheet extends ConsumerStatefulWidget {
 
 class _ItemActivityBreakdownSheetState
     extends ConsumerState<ItemActivityBreakdownSheet> {
+  late ItemBreakdownSection _currentSection;
   late Set<ItemBreakdownTab> _selectedTabs;
   static const int _pageSize = 8;
   int _currentPage = 1;
@@ -83,7 +90,20 @@ class _ItemActivityBreakdownSheetState
     final startTab = widget.initialTab == ItemBreakdownTab.all
         ? ItemBreakdownTab.inCart
         : widget.initialTab;
-    _selectedTabs = {startTab};
+    if (startTab == ItemBreakdownTab.pickedUp ||
+        startTab == ItemBreakdownTab.rejected ||
+        startTab == ItemBreakdownTab.lots ||
+        startTab == ItemBreakdownTab.history) {
+      _currentSection = ItemBreakdownSection.history;
+      _selectedTabs = {
+        startTab == ItemBreakdownTab.history
+            ? ItemBreakdownTab.pickedUp
+            : startTab
+      };
+    } else {
+      _currentSection = ItemBreakdownSection.realTime;
+      _selectedTabs = {startTab};
+    }
     _tabScrollCtrl = ScrollController();
     _listScrollCtrl = ScrollController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -104,19 +124,16 @@ class _ItemActivityBreakdownSheetState
     double offset = 0;
     switch (tab) {
       case ItemBreakdownTab.inCart:
+      case ItemBreakdownTab.pickedUp:
         offset = 0;
         break;
       case ItemBreakdownTab.requested:
-        offset = 65;
+      case ItemBreakdownTab.rejected:
+        offset = 75;
         break;
       case ItemBreakdownTab.readyForIssue:
-        offset = 145;
-        break;
-      case ItemBreakdownTab.pickedUp:
-        offset = 245;
-        break;
-      case ItemBreakdownTab.rejected:
-        offset = 360;
+      case ItemBreakdownTab.lots:
+        offset = 160;
         break;
       default:
         offset = 0;
@@ -126,6 +143,46 @@ class _ItemActivityBreakdownSheetState
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _onSectionChanged(ItemBreakdownSection section) {
+    if (_currentSection == section) return;
+    setState(() {
+      _currentSection = section;
+      _currentPage = 1;
+      if (section == ItemBreakdownSection.realTime) {
+        if (!_selectedTabs.any((t) =>
+            t == ItemBreakdownTab.inCart ||
+            t == ItemBreakdownTab.requested ||
+            t == ItemBreakdownTab.readyForIssue)) {
+          _selectedTabs = {ItemBreakdownTab.inCart};
+        } else {
+          _selectedTabs.removeWhere((t) =>
+              t == ItemBreakdownTab.pickedUp ||
+              t == ItemBreakdownTab.rejected ||
+              t == ItemBreakdownTab.lots ||
+              t == ItemBreakdownTab.history);
+        }
+      } else {
+        if (!_selectedTabs.any((t) =>
+            t == ItemBreakdownTab.pickedUp ||
+            t == ItemBreakdownTab.rejected ||
+            t == ItemBreakdownTab.lots)) {
+          _selectedTabs = {ItemBreakdownTab.pickedUp};
+        } else {
+          _selectedTabs.removeWhere((t) =>
+              t == ItemBreakdownTab.inCart ||
+              t == ItemBreakdownTab.requested ||
+              t == ItemBreakdownTab.readyForIssue);
+        }
+      }
+    });
+    if (_listScrollCtrl.hasClients) {
+      _listScrollCtrl.jumpTo(0);
+    }
+    if (_tabScrollCtrl.hasClients) {
+      _tabScrollCtrl.jumpTo(0);
+    }
   }
 
   void _toggleTab(ItemBreakdownTab tab, bool isDesktop) {
@@ -163,6 +220,7 @@ class _ItemActivityBreakdownSheetState
     if (_selectedTabs.contains(ItemBreakdownTab.readyForIssue)) names.add('Ready for Issue');
     if (_selectedTabs.contains(ItemBreakdownTab.pickedUp)) names.add('Picked Up');
     if (_selectedTabs.contains(ItemBreakdownTab.rejected)) names.add('Rejected');
+    if (_selectedTabs.contains(ItemBreakdownTab.lots)) names.add('GRN Batches');
     return names.join(', ');
   }
 
@@ -250,7 +308,8 @@ class _ItemActivityBreakdownSheetState
     if (cartBreakdownAsync.hasValue || issueBreakdownAsync.hasValue) {
       // 1. In Cart: cart records + synthesized transitions
       final existingIds = cartListVal
-          .map((c) => c is Map ? c['issueId']?.toString() : null)
+          .whereType<Map>()
+          .map((c) => c['issueId']?.toString())
           .where((id) => id != null && id.isNotEmpty)
           .toSet();
       int transCount = 0;
@@ -321,6 +380,11 @@ class _ItemActivityBreakdownSheetState
         }
       }
     }
+
+    final rawLotsVal = issueMapVal['stockLots'];
+    final int lotsCount = (rawLotsVal is List) ? rawLotsVal.length : 0;
+    final int realTimeCount = inCartCount + requestedCount + readyCount;
+    final int historyCount = pickedUpCount + rejectedCount + lotsCount;
 
     return Center(
       child: ConstrainedBox(
@@ -466,25 +530,6 @@ class _ItemActivityBreakdownSheetState
                                   ),
                                 ),
                               ],
-                              if (issueMapVal['stockLots'] is List && (issueMapVal['stockLots'] as List).isNotEmpty) ...[
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF0FDF4),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFF86EFAC)),
-                                  ),
-                                  child: Text(
-                                    '${(issueMapVal['stockLots'] as List).length} Lots',
-                                    style: TextStyle(
-                                      fontSize: isDesktop ? 10 : 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF15803D),
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ],
@@ -513,9 +558,53 @@ class _ItemActivityBreakdownSheetState
               const SizedBox(height: 10),
               const Divider(height: 1, color: _stroke),
 
+              // Primary 2-Tab Mode Switcher: Real Time (Active) vs History (Past)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.all(3.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1EFEA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _stroke),
+                  ),
+                  child: Row(
+                    children: [
+                      // Tab 1: Real Time (Active)
+                      Expanded(
+                        child: _buildSectionSwitcherButton(
+                          section: ItemBreakdownSection.realTime,
+                          label: isDesktop ? 'Real Time (Active)' : 'Real Time',
+                          icon: Icons.bolt_rounded,
+                          count: realTimeCount,
+                          activeColor: const Color(0xFF1565C0),
+                          activeBgColor: Colors.white,
+                          isDesktop: isDesktop,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+
+                      // Tab 2: History (Past)
+                      Expanded(
+                        child: _buildSectionSwitcherButton(
+                          section: ItemBreakdownSection.history,
+                          label: isDesktop ? 'History (Past)' : 'History',
+                          icon: Icons.history_rounded,
+                          count: historyCount,
+                          activeColor: const Color(0xFF282321),
+                          activeBgColor: Colors.white,
+                          isDesktop: isDesktop,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Filter & Search Row
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
                 child: Row(
                   children: [
                     Expanded(
@@ -561,7 +650,7 @@ class _ItemActivityBreakdownSheetState
                 ),
               ),
 
-              // Interactive Segment Tabs (In Cart | Requested | Ready | Picked Up | Rejected Requests)
+              // Interactive Segment Tabs (Filtered by Section)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
                 child: Container(
@@ -573,66 +662,79 @@ class _ItemActivityBreakdownSheetState
                   ),
                   child: isDesktop
                       ? Row(
-                          children: [
-                            // Tab 1: In Cart
-                            _buildTabButton(
-                              tab: ItemBreakdownTab.inCart,
-                              icon: Icons.shopping_cart_outlined,
-                              label: 'In Cart',
-                              count: inCartCount,
-                              activeColor: const Color(0xFF1565C0),
-                              activeBgColor: const Color(0xFFE3F2FD),
-                              expand: true,
-                            ),
-                            const SizedBox(width: 3),
+                          children: _currentSection == ItemBreakdownSection.realTime
+                              ? [
+                                  // Tab 1: In Cart
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.inCart,
+                                    icon: Icons.shopping_cart_outlined,
+                                    label: 'In Cart',
+                                    count: inCartCount,
+                                    activeColor: const Color(0xFF1565C0),
+                                    activeBgColor: const Color(0xFFE3F2FD),
+                                    expand: true,
+                                  ),
+                                  const SizedBox(width: 3),
 
-                            // Tab 2: Requested
-                            _buildTabButton(
-                              tab: ItemBreakdownTab.requested,
-                              icon: Icons.hourglass_top_rounded,
-                              label: 'Requested',
-                              count: requestedCount,
-                              activeColor: const Color(0xFFE65100),
-                              activeBgColor: const Color(0xFFFFF3E0),
-                              expand: true,
-                            ),
-                            const SizedBox(width: 3),
+                                  // Tab 2: Requested
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.requested,
+                                    icon: Icons.hourglass_top_rounded,
+                                    label: 'Requested',
+                                    count: requestedCount,
+                                    activeColor: const Color(0xFFE65100),
+                                    activeBgColor: const Color(0xFFFFF3E0),
+                                    expand: true,
+                                  ),
+                                  const SizedBox(width: 3),
 
-                            // Tab 3: Ready for Issue
-                            _buildTabButton(
-                              tab: ItemBreakdownTab.readyForIssue,
-                              icon: Icons.outbox_rounded,
-                              label: 'Ready for Issue',
-                              count: readyCount,
-                              activeColor: const Color(0xFF5E35B1),
-                              activeBgColor: const Color(0xFFEDE7F6),
-                              expand: true,
-                            ),
-                            const SizedBox(width: 3),
+                                  // Tab 3: Ready for Issue
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.readyForIssue,
+                                    icon: Icons.outbox_rounded,
+                                    label: 'Ready for Issue',
+                                    count: readyCount,
+                                    activeColor: const Color(0xFF5E35B1),
+                                    activeBgColor: const Color(0xFFEDE7F6),
+                                    expand: true,
+                                  ),
+                                ]
+                              : [
+                                  // Tab 1: Picked Up
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.pickedUp,
+                                    icon: Icons.check_circle_outline_rounded,
+                                    label: 'Picked Up',
+                                    count: pickedUpCount,
+                                    activeColor: const Color(0xFF2E7D32),
+                                    activeBgColor: const Color(0xFFE8F5E9),
+                                    expand: true,
+                                  ),
+                                  const SizedBox(width: 3),
 
-                            // Tab 4: Picked Up
-                            _buildTabButton(
-                              tab: ItemBreakdownTab.pickedUp,
-                              icon: Icons.check_circle_outline_rounded,
-                              label: 'Picked Up',
-                              count: pickedUpCount,
-                              activeColor: const Color(0xFF2E7D32),
-                              activeBgColor: const Color(0xFFE8F5E9),
-                              expand: true,
-                            ),
-                            const SizedBox(width: 3),
+                                  // Tab 2: Rejected Requests
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.rejected,
+                                    icon: Icons.cancel_outlined,
+                                    label: 'Rejected',
+                                    count: rejectedCount,
+                                    activeColor: const Color(0xFFC62828),
+                                    activeBgColor: const Color(0xFFFFEBEE),
+                                    expand: true,
+                                  ),
+                                  const SizedBox(width: 3),
 
-                            // Tab 5: Rejected Requests
-                            _buildTabButton(
-                              tab: ItemBreakdownTab.rejected,
-                              icon: Icons.cancel_outlined,
-                              label: 'Rejected Requests',
-                              count: rejectedCount,
-                              activeColor: const Color(0xFFC62828),
-                              activeBgColor: const Color(0xFFFFEBEE),
-                              expand: true,
-                            ),
-                          ],
+                                  // Tab 3: GRN Batches (Lots)
+                                  _buildTabButton(
+                                    tab: ItemBreakdownTab.lots,
+                                    icon: Icons.inventory_2_outlined,
+                                    label: 'GRN Batches',
+                                    count: lotsCount,
+                                    activeColor: const Color(0xFF0D9488),
+                                    activeBgColor: const Color(0xFFF0FDFA),
+                                    expand: true,
+                                  ),
+                                ],
                         )
                       : ScrollConfiguration(
                           behavior: ScrollConfiguration.of(context).copyWith(
@@ -647,52 +749,63 @@ class _ItemActivityBreakdownSheetState
                             physics: const BouncingScrollPhysics(),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildTabButton(
-                                  tab: ItemBreakdownTab.inCart,
-                                  icon: Icons.shopping_cart_outlined,
-                                  label: 'In Cart',
-                                  count: inCartCount,
-                                  activeColor: const Color(0xFF1565C0),
-                                  activeBgColor: const Color(0xFFE3F2FD),
-                                ),
-                                const SizedBox(width: 3.5),
-                                _buildTabButton(
-                                  tab: ItemBreakdownTab.requested,
-                                  icon: Icons.hourglass_top_rounded,
-                                  label: 'Requested',
-                                  count: requestedCount,
-                                  activeColor: const Color(0xFFE65100),
-                                  activeBgColor: const Color(0xFFFFF3E0),
-                                ),
-                                const SizedBox(width: 3.5),
-                                _buildTabButton(
-                                  tab: ItemBreakdownTab.readyForIssue,
-                                  icon: Icons.outbox_rounded,
-                                  label: 'Ready for Issue',
-                                  count: readyCount,
-                                  activeColor: const Color(0xFF5E35B1),
-                                  activeBgColor: const Color(0xFFEDE7F6),
-                                ),
-                                const SizedBox(width: 3.5),
-                                _buildTabButton(
-                                  tab: ItemBreakdownTab.pickedUp,
-                                  icon: Icons.check_circle_outline_rounded,
-                                  label: 'Picked Up',
-                                  count: pickedUpCount,
-                                  activeColor: const Color(0xFF2E7D32),
-                                  activeBgColor: const Color(0xFFE8F5E9),
-                                ),
-                                const SizedBox(width: 3.5),
-                                _buildTabButton(
-                                  tab: ItemBreakdownTab.rejected,
-                                  icon: Icons.cancel_outlined,
-                                  label: 'Rejected',
-                                  count: rejectedCount,
-                                  activeColor: const Color(0xFFC62828),
-                                  activeBgColor: const Color(0xFFFFEBEE),
-                                ),
-                              ],
+                              children: _currentSection == ItemBreakdownSection.realTime
+                                  ? [
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.inCart,
+                                        icon: Icons.shopping_cart_outlined,
+                                        label: 'In Cart',
+                                        count: inCartCount,
+                                        activeColor: const Color(0xFF1565C0),
+                                        activeBgColor: const Color(0xFFE3F2FD),
+                                      ),
+                                      const SizedBox(width: 3.5),
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.requested,
+                                        icon: Icons.hourglass_top_rounded,
+                                        label: 'Requested',
+                                        count: requestedCount,
+                                        activeColor: const Color(0xFFE65100),
+                                        activeBgColor: const Color(0xFFFFF3E0),
+                                      ),
+                                      const SizedBox(width: 3.5),
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.readyForIssue,
+                                        icon: Icons.outbox_rounded,
+                                        label: 'Ready for Issue',
+                                        count: readyCount,
+                                        activeColor: const Color(0xFF5E35B1),
+                                        activeBgColor: const Color(0xFFEDE7F6),
+                                      ),
+                                    ]
+                                  : [
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.pickedUp,
+                                        icon: Icons.check_circle_outline_rounded,
+                                        label: 'Picked Up',
+                                        count: pickedUpCount,
+                                        activeColor: const Color(0xFF2E7D32),
+                                        activeBgColor: const Color(0xFFE8F5E9),
+                                      ),
+                                      const SizedBox(width: 3.5),
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.rejected,
+                                        icon: Icons.cancel_outlined,
+                                        label: 'Rejected',
+                                        count: rejectedCount,
+                                        activeColor: const Color(0xFFC62828),
+                                        activeBgColor: const Color(0xFFFFEBEE),
+                                      ),
+                                      const SizedBox(width: 3.5),
+                                      _buildTabButton(
+                                        tab: ItemBreakdownTab.lots,
+                                        icon: Icons.inventory_2_outlined,
+                                        label: 'GRN Batches',
+                                        count: lotsCount,
+                                        activeColor: const Color(0xFF0D9488),
+                                        activeBgColor: const Color(0xFFF0FDFA),
+                                      ),
+                                    ],
                             ),
                           ),
                         ),
@@ -714,7 +827,9 @@ class _ItemActivityBreakdownSheetState
                                       ? Icons.outbox_rounded
                                       : _selectedTabs.contains(ItemBreakdownTab.pickedUp)
                                           ? Icons.check_circle_outline_rounded
-                                          : Icons.cancel_outlined)
+                                          : _selectedTabs.contains(ItemBreakdownTab.lots)
+                                              ? Icons.inventory_2_outlined
+                                              : Icons.cancel_outlined)
                           : Icons.tune_rounded,
                       size: 13,
                       color: _ink600,
@@ -731,7 +846,9 @@ class _ItemActivityBreakdownSheetState
                                         ? 'Approved items currently waiting at the store counter for recipient pickup.'
                                         : _selectedTabs.contains(ItemBreakdownTab.pickedUp)
                                             ? 'Items successfully handed over and physically collected by departments.'
-                                            : 'Requisitions rejected by authority or automatically expired without approval.')
+                                            : _selectedTabs.contains(ItemBreakdownTab.lots)
+                                                ? 'Historical GRN inward batches and purchase lots recorded in store stock.'
+                                                : 'Requisitions rejected by authority or automatically expired without approval.')
                             : 'Multi-filter active (${_selectedTabs.length} stages): ${_getSelectedTabsSummary()}.',
                         style: const TextStyle(
                           fontSize: 11,
@@ -746,16 +863,28 @@ class _ItemActivityBreakdownSheetState
                     InkWell(
                       onTap: () {
                         setState(() {
-                          if (_selectedTabs.length == 5) {
-                            _selectedTabs = {ItemBreakdownTab.inCart};
-                          } else {
-                            _selectedTabs = {
+                          if (_currentSection == ItemBreakdownSection.realTime) {
+                            final allRealTime = {
                               ItemBreakdownTab.inCart,
                               ItemBreakdownTab.requested,
                               ItemBreakdownTab.readyForIssue,
+                            };
+                            if (_selectedTabs.containsAll(allRealTime)) {
+                              _selectedTabs = {ItemBreakdownTab.inCart};
+                            } else {
+                              _selectedTabs = allRealTime;
+                            }
+                          } else {
+                            final allHistory = {
                               ItemBreakdownTab.pickedUp,
                               ItemBreakdownTab.rejected,
+                              ItemBreakdownTab.lots,
                             };
+                            if (_selectedTabs.containsAll(allHistory)) {
+                              _selectedTabs = {ItemBreakdownTab.pickedUp};
+                            } else {
+                              _selectedTabs = allHistory;
+                            }
                           }
                           _currentPage = 1;
                         });
@@ -767,7 +896,11 @@ class _ItemActivityBreakdownSheetState
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                         child: Text(
-                          _selectedTabs.length == 5 ? 'Reset' : 'Select All',
+                          (_currentSection == ItemBreakdownSection.realTime
+                                  ? _selectedTabs.length == 3
+                                  : _selectedTabs.length == 3)
+                              ? 'Reset'
+                              : 'Select All',
                           style: const TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w700,
@@ -792,6 +925,90 @@ class _ItemActivityBreakdownSheetState
                   readyCount: readyCount,
                   pickedUpCount: pickedUpCount,
                   rejectedCount: rejectedCount,
+                  lotsCount: lotsCount,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionSwitcherButton({
+    required ItemBreakdownSection section,
+    required String label,
+    required IconData icon,
+    required int count,
+    required Color activeColor,
+    required Color activeBgColor,
+    required bool isDesktop,
+  }) {
+    final isSelected = _currentSection == section;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: () => _onSectionChanged(section),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(
+            vertical: isDesktop ? 6.5 : 5.5,
+            horizontal: isDesktop ? 10 : 8,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected ? activeBgColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1.5),
+                    )
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: isDesktop ? 15 : 14,
+                color: isSelected ? activeColor : _ink600,
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: isDesktop ? 12 : 11.5,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? _ink900 : _ink600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? activeColor.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: isDesktop ? 10.5 : 10,
+                    fontWeight: FontWeight.w800,
+                    color: isSelected ? activeColor : _ink600,
+                  ),
                 ),
               ),
             ],
@@ -924,6 +1141,7 @@ class _ItemActivityBreakdownSheetState
     required int readyCount,
     int pickedUpCount = 0,
     int rejectedCount = 0,
+    int lotsCount = 0,
   }) {
     // When both are loading
     if (cartAsync.isLoading && issueAsync.isLoading) {
@@ -957,17 +1175,48 @@ class _ItemActivityBreakdownSheetState
             .toList()
         : <Map<String, dynamic>>[];
 
+    // Parse stock lots (GRN batches)
+    final rawLots = issueMap['stockLots'];
+    final lotsList = <Map<String, dynamic>>[];
+    if (rawLots is List) {
+      for (final l in rawLots) {
+        if (l is Map) {
+          final lotId = (l['lotId'] ?? l['_id'] ?? '').toString();
+          final grnNo = (l['grnNo'] ?? '').toString();
+          lotsList.add({
+            'lotId': lotId,
+            'grnNo': grnNo,
+            'quantity': l['qty'] ?? 0,
+            'remainingQty': l['remainingQty'] ?? 0,
+            'unitPrice': (l['unitPrice'] as num?)?.toDouble() ?? 0.0,
+            'receivedAt': l['receivedAt'] ?? '',
+            'recNo': (l['recNo'] ?? '').toString(),
+            'status': 'GRN_RECEIVED',
+            '_type': 'stockLot',
+            'department': 'Store Inward',
+            'userName': grnNo.isNotEmpty ? grnNo : 'GRN Inward Batch',
+            'remark':
+                'Remaining: ${l['remainingQty'] ?? 0} / ${l['qty'] ?? 0} ${widget.item.unit}',
+          });
+        }
+      }
+    }
+
     // Filter helper
     bool matchesFilter(Map<String, dynamic> item) {
       if (_searchFilter.isEmpty) return true;
       final dept = (item['department'] ?? '').toString().toLowerCase();
       final user = (item['userName'] ?? '').toString().toLowerCase();
       final issNo = (item['issNo'] ?? '').toString().toLowerCase();
+      final grnNo = (item['grnNo'] ?? '').toString().toLowerCase();
       final reason = (item['reason'] ?? '').toString().toLowerCase();
+      final remark = (item['remark'] ?? '').toString().toLowerCase();
       return dept.contains(_searchFilter) ||
           user.contains(_searchFilter) ||
           issNo.contains(_searchFilter) ||
-          reason.contains(_searchFilter);
+          grnNo.contains(_searchFilter) ||
+          reason.contains(_searchFilter) ||
+          remark.contains(_searchFilter);
     }
 
     // Build comprehensive cart entries (active + auto-reverts + removals + requisitions moved from cart)
@@ -1108,6 +1357,11 @@ class _ItemActivityBreakdownSheetState
       addRecords(rejectedMap.values.toList());
     }
 
+    // 6. Lots / GRN Batches
+    if (_selectedTabs.contains(ItemBreakdownTab.lots)) {
+      addRecords(lotsList);
+    }
+
     // Fallback for History tab if ever invoked
     if (_selectedTabs.contains(ItemBreakdownTab.history)) {
       final historyMap = <String, Map<String, dynamic>>{};
@@ -1130,7 +1384,8 @@ class _ItemActivityBreakdownSheetState
     }
 
     DateTime parseRecordDate(Map<String, dynamic> item) {
-      final raw = item['revertedAt'] ??
+      final raw = item['receivedAt'] ??
+          item['revertedAt'] ??
           item['rejectedAt'] ??
           item['issuedAt'] ??
           item['approvedAt'] ??
@@ -1185,6 +1440,13 @@ class _ItemActivityBreakdownSheetState
               icon: Icons.cancel_outlined,
               title: 'No Rejected Requisitions',
               subtitle: 'No requisitions have been rejected by managers or expired.',
+            );
+          case ItemBreakdownTab.lots:
+            return _buildEmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: 'No GRN Inward Batches',
+              subtitle:
+                  'No inward purchase lots have been recorded for ${widget.item.itemName}.',
             );
           default:
             return _buildEmptyState(
@@ -1537,6 +1799,13 @@ class _ItemActivityBreakdownSheetState
         borderColor = const Color(0xFFE1BEE7);
         statusLabel = 'APPROVAL REVERTED';
         statusIcon = Icons.replay_rounded;
+        break;
+      case 'stockLot':
+        primaryColor = const Color(0xFF0D9488);
+        bgColor = const Color(0xFFF0FDFA);
+        borderColor = const Color(0xFF99F6E4);
+        statusLabel = 'GRN INWARD';
+        statusIcon = Icons.inventory_2_outlined;
         break;
       case 'issued':
       default:
@@ -2402,7 +2671,38 @@ class _ItemActivityBreakdownSheetState
             ),
           ]
 
-          // ===================== CASE 10: ISSUED =====================
+          // =================== CASE 10: STOCK LOT (GRN) ===================
+          else if (type == 'stockLot') ...[
+            _buildTimelineItem(
+              isFirst: true,
+              isCompleted: true,
+              icon: Icons.inventory_2_outlined,
+              iconColor: const Color(0xFF0D9488),
+              title: 'GRN Inward Ingestion',
+              actorText:
+                  'Batch: ${(data['grnNo'] != null && data['grnNo'].toString().isNotEmpty) ? data['grnNo'] : "Inward GRN"}',
+              dateTimeText: data['receivedAt'] != null
+                  ? _formatDateTime(data['receivedAt'])
+                  : 'Received',
+              note:
+                  'Inward shipment received and physically verified into store inventory.',
+            ),
+            _buildTimelineItem(
+              isLast: true,
+              isCompleted: true,
+              icon: Icons.fact_check_outlined,
+              iconColor: const Color(0xFF15803D),
+              title: 'Batch Stock Allocation (FIFO)',
+              actorText:
+                  'Purchase Rate: ₹${((data['unitPrice'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)} / ${widget.item.unit.isNotEmpty ? widget.item.unit : "pc"}',
+              dateTimeText:
+                  'Remaining: ${data['remainingQty'] ?? 0} / ${data['quantity'] ?? 0} ${widget.item.unit.isNotEmpty ? widget.item.unit : "PCS"}',
+              note:
+                  'Available in active shelf stock. Lot ID: ${(data['lotId'] != null && data['lotId'].toString().isNotEmpty) ? data['lotId'] : "-"}',
+            ),
+          ]
+
+          // ===================== CASE 11: ISSUED (DEFAULT) =====================
           else ...[
             _buildTimelineItem(
               isFirst: true,

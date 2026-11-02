@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:store_app/src/auth/shared/providers/auth_model_provider.dart';
 import 'package:store_app/src/auth/shared/repositories/shared_preference_repository.dart';
 
 import '../../../controllers/guided_tour_controller.dart';
@@ -11,7 +10,6 @@ import '../../../controllers/store_item_issue_controller.dart';
 import 'package:store_app/src/store_page/controllers/indent_draft_controller.dart';
 import 'package:store_app/src/store_page/domains/models/issue_models.dart';
 import 'package:store_app/src/store_page/presentation/view/indent/indent_drafts_page.dart';
-import './store_cart_timer_settings_sheet.dart';
 
 /* ---------------- Palette ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -308,12 +306,6 @@ class _StoreCartPageState extends ConsumerState<StoreCartPage> {
               );
             },
           ),
-          if (ref.watch(authModelProvider)?.isSuperAdmin == true)
-            IconButton(
-              tooltip: 'Cart Auto-Revert Settings',
-              icon: const Icon(Icons.timer_outlined, color: _ink700),
-              onPressed: () => showCartTimerSettingsSheet(context),
-            ),
           if (cart.isNotEmpty)
             IconButton(
               tooltip: 'Clear Cart',

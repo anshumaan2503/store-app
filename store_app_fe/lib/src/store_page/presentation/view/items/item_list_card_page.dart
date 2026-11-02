@@ -917,13 +917,6 @@ class ItemListCard extends StatelessWidget {
             );
           },
         ),
-        if (canEdit)
-          _ActionIconButton(
-            key: editButtonKey,
-            icon: Icons.edit_outlined,
-            tooltip: 'Edit Item',
-            onTap: onEdit,
-          ),
         _ActionIconButton(
           icon: Icons.qr_code_2_rounded,
           tooltip: 'QR Code',

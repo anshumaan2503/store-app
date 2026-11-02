@@ -4,6 +4,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../controllers/store_rack_controller.dart';
 import '../../../../domains/models/store_issue_model.dart';
+import 'package:store_app/src/store_page/controllers/scanner_settings_controller.dart';
+import 'package:store_app/src/store_page/presentation/view/widgets/scanner_mode_selector_bar.dart';
 
 /* ---------------- Palette ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -151,6 +153,63 @@ class _ItemIssueVerifyScanPageState
     if (_isHandlingCode) return;
     final trimmed = rawCode.trim();
     if (trimmed.isEmpty) return;
+
+    final lower = trimmed.toLowerCase();
+    final activeMode = ref.read(scannerSettingsProvider).issueMode;
+
+    if (activeMode == ScannerTargetMode.placeOnly &&
+        (lower.startsWith('p0040.') ||
+            lower == widget.line.itemId.toLowerCase())) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Item QR ignored: Issue Scanner set to 'Place only' mode",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF4D4542),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    if (activeMode == ScannerTargetMode.itemOnly && lower.startsWith('p0041.')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Place QR ignored: Issue Scanner set to 'Item only' mode",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF4D4542),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
 
     _isHandlingCode = true;
     await _controller.pause();
@@ -398,6 +457,7 @@ class _ItemIssueVerifyScanPageState
                   ],
                 ),
               ),
+              const ScannerModeSelectorBar(workflow: ScannerWorkflow.issue),
 
               // Scanner Viewport
               Expanded(

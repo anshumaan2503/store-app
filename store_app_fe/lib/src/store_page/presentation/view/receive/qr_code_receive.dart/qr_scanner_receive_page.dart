@@ -1,25 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:store_app/src/components/motion_widgets.dart';
+import 'package:store_app/src/store_page/controllers/store_rack_controller.dart';
 import '../scan_item_receive_page.dart';
 import '../scan_rack_receive_page.dart';
+import 'package:store_app/src/store_page/controllers/scanner_settings_controller.dart';
+import 'package:store_app/src/store_page/presentation/view/widgets/scanner_mode_selector_bar.dart';
 
-class QRCodeScannerRackPage extends StatefulWidget {
+class QRCodeScannerRackPage extends ConsumerStatefulWidget {
   final String? initialItemId;
   final String? initialIndentId;
   final num? initialIndentQty;
-  const QRCodeScannerRackPage({super.key, this.initialItemId, this.initialIndentId, this.initialIndentQty});
+  final String? initialIndentNumber;
+  final bool isPutaway;
+  const QRCodeScannerRackPage({
+    super.key,
+    this.initialItemId,
+    this.initialIndentId,
+    this.initialIndentQty,
+    this.initialIndentNumber,
+    this.isPutaway = false,
+  });
 
   @override
-  State<QRCodeScannerRackPage> createState() => _QRCodeScannerRackPageState();
+  ConsumerState<QRCodeScannerRackPage> createState() =>
+      _QRCodeScannerRackPageState();
 }
 
-class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
+class _QRCodeScannerRackPageState extends ConsumerState<QRCodeScannerRackPage> {
   late final MobileScannerController _controller;
   final double scanArea = 300;
 
   bool _isHandlingCode = false;
+  bool _isLoadingRacks = false;
+  List<Map<String, dynamic>> _assignedRacks = [];
+
+  bool get _isPutawayWorkflow =>
+      widget.isPutaway ||
+      widget.initialIndentId != null ||
+      widget.initialItemId != null;
+
+  ScannerWorkflow get _activeWorkflow =>
+      _isPutawayWorkflow ? ScannerWorkflow.putaway : ScannerWorkflow.receive;
 
   @override
   void initState() {
@@ -30,6 +54,31 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
       formats: const [BarcodeFormat.qrCode],
       torchEnabled: false,
     );
+
+    if (widget.initialItemId != null && widget.initialItemId!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fetchAssignedRacks();
+      });
+    }
+  }
+
+  Future<void> _fetchAssignedRacks() async {
+    final itemId = widget.initialItemId;
+    if (itemId == null || itemId.isEmpty) return;
+
+    if (mounted) setState(() => _isLoadingRacks = true);
+    try {
+      final racks =
+          await ref.read(storeRackControllerProvider).getRacksByItem(itemId);
+      if (mounted) {
+        setState(() {
+          _assignedRacks = racks;
+          _isLoadingRacks = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingRacks = false);
+    }
   }
 
   @override
@@ -57,13 +106,10 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
       child: Scaffold(
         appBar: AppBar(
           centerTitle: true,
-
-          // ✅ App back button works
           leading: Padding(
             padding: const EdgeInsets.only(left: 10, top: 10, bottom: 10),
             child: AppBackButton(onPressed: _appBack),
           ),
-
           title: const Text(
             "Store Scanner",
             style: TextStyle(fontWeight: FontWeight.bold),
@@ -76,7 +122,6 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
             ),
           ],
         ),
-
         floatingActionButton: ValueListenableBuilder<MobileScannerState>(
           valueListenable: _controller,
           builder: (context, state, _) {
@@ -101,17 +146,18 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
             );
           },
         ),
-
         body: SafeArea(
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 2),
                 child: Text(
-                  "QR Code Scanner",
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  _isPutawayWorkflow ? "Put Away Scanner" : "Receive Scanner",
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
+              ScannerModeSelectorBar(workflow: _activeWorkflow),
+
               Expanded(
                 child: Stack(
                   fit: StackFit.expand,
@@ -174,11 +220,12 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
   }
 
   Future<void> _manualRackInput() async {
-    final ctrl = TextEditingController(text: '69c6287b9827412ba0bc8b6b');
+    final ctrl = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Enter Rack ID (Web / Testing)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Text('Enter Rack ID (Web / Manual)',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +238,7 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
             TextField(
               controller: ctrl,
               decoration: const InputDecoration(
-                labelText: 'Rack Database ID',
+                labelText: 'Rack Database ID or Code',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -211,38 +258,63 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
     );
 
     if (result != null && result.isNotEmpty && mounted) {
-      if (result.contains('.')) {
-        await _handleScannedValue(result);
-      } else {
-        await Navigator.pushReplacement<bool, void>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ScanRackReceivePage(rackId: result, initialItemId: widget.initialItemId, initialIndentId: widget.initialIndentId, initialIndentQty: widget.initialIndentQty),
-          ),
-        );
-      }
+      await _validateAndProceed(result);
     }
   }
 
-  Future<void> _handleScannedValue(String rawValue) async {
-    final parts = rawValue.split('.');
-    if (parts.length != 2) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Invalid QR format")));
-      return;
-    }
-
-    final qrCodeId = parts[0];
-    final databaseId = parts[1];
-
+  Future<void> _validateAndProceed(String rawInput) async {
     _isHandlingCode = true;
     await _controller.pause();
 
-    switch (qrCodeId) {
-      case "P0040":
-        {
+    String scannedRackTarget = rawInput.trim();
+
+    if (scannedRackTarget.contains('.')) {
+      final parts = scannedRackTarget.split('.');
+      if (parts.length != 2) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid QR format")),
+        );
+        _isHandlingCode = false;
+        await _controller.start();
+        return;
+      }
+
+      final qrCodeId = parts[0];
+      final databaseId = parts[1].trim();
+
+      final activeMode =
+          ref.read(scannerSettingsProvider).getMode(_activeWorkflow);
+
+      if (qrCodeId == "P0040") {
+        if (activeMode == ScannerTargetMode.placeOnly) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Item QR ignored: Scanner set to 'Place only' mode",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF4D4542),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+          _isHandlingCode = false;
+          await _controller.start();
+          return;
+        }
+        if (widget.initialItemId == null) {
           if (!mounted) return;
           await Navigator.pushReplacement<bool, void>(
             context,
@@ -250,30 +322,182 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
               builder: (context) => ScanItemReceivePage(itemId: databaseId),
             ),
           );
-          break;
-        }
-      case "P0041":
-        {
+          return;
+        } else {
+          final messenger = ScaffoldMessenger.of(context);
+          await _controller.stop();
           if (!mounted) return;
-          await Navigator.pushReplacement<bool, void>(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ScanRackReceivePage(rackId: databaseId, initialItemId: widget.initialItemId, initialIndentId: widget.initialIndentId, initialIndentQty: widget.initialIndentQty),
+          Navigator.of(context).pop(false);
+
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Wrong QR: Please scan a Rack QR code (P0041)",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFC62828),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           );
-          break;
+          return;
         }
-
-      default:
-        {
+      } else if (qrCodeId == "P0041") {
+        if (activeMode == ScannerTargetMode.itemOnly) {
           if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text("Invalid QR format")));
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Place QR ignored: Scanner set to 'Item only' mode",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF4D4542),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
           _isHandlingCode = false;
           await _controller.start();
+          return;
         }
+
+        scannedRackTarget = databaseId;
+      } else {
+        final messenger = ScaffoldMessenger.of(context);
+        await _controller.stop();
+        if (!mounted) return;
+        Navigator.of(context).pop(false);
+
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text("Wrong QR: Invalid format", style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            backgroundColor: const Color(0xFFC62828),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        return;
+      }
     }
+
+    final itemId = widget.initialItemId;
+    if (itemId != null && itemId.isNotEmpty) {
+      // Ensure assigned racks are loaded
+      if (_assignedRacks.isEmpty) {
+        try {
+          _assignedRacks = await ref
+              .read(storeRackControllerProvider)
+              .getRacksByItem(itemId);
+        } catch (_) {}
+      }
+
+      // Check if the item already exists / is assigned in any rack
+      if (_assignedRacks.isNotEmpty) {
+        final matchedRack = _assignedRacks.firstWhere(
+          (r) {
+            final rId = (r['_id'] ?? r['id'])?.toString().trim() ?? '';
+            final rCode =
+                (r['code'] ?? '')?.toString().trim().toUpperCase() ?? '';
+            final rName =
+                (r['rackName'] ?? '')?.toString().trim().toUpperCase() ?? '';
+            final target = scannedRackTarget.toUpperCase();
+            return rId == scannedRackTarget ||
+                rCode == target ||
+                rName == target;
+          },
+          orElse: () => <String, dynamic>{},
+        );
+
+        if (matchedRack.isEmpty) {
+          // Wrong Rack scanned: automatically close camera and show footer popup
+          final assignedCodes = _assignedRacks
+              .map((r) =>
+                  r['code']?.toString() ?? r['rackName']?.toString() ?? '')
+              .where((s) => s.isNotEmpty)
+              .join(', ');
+
+          final messenger = ScaffoldMessenger.of(context);
+          await _controller.stop();
+          if (!mounted) return;
+          Navigator.of(context).pop(false);
+
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      assignedCodes.isNotEmpty
+                          ? 'Wrong QR: Item is assigned in some other rack ($assignedCodes)'
+                          : 'Wrong QR',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFC62828),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+          return;
+        } else {
+          // Matched! Use the actual matched rack's _id
+          scannedRackTarget =
+              (matchedRack['_id'] ?? matchedRack['id'])?.toString() ??
+                  scannedRackTarget;
+        }
+      }
+    }
+
+    if (!mounted) return;
+
+    await Navigator.pushReplacement<bool, void>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScanRackReceivePage(
+          rackId: scannedRackTarget,
+          initialItemId: widget.initialItemId,
+          initialIndentId: widget.initialIndentId,
+          initialIndentQty: widget.initialIndentQty,
+          initialIndentNumber: widget.initialIndentNumber,
+        ),
+      ),
+    );
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -285,6 +509,6 @@ class _QRCodeScannerRackPageState extends State<QRCodeScannerRackPage> {
 
     if (rawValue == null || rawValue.isEmpty) return;
 
-    _handleScannedValue(rawValue);
+    _validateAndProceed(rawValue);
   }
 }

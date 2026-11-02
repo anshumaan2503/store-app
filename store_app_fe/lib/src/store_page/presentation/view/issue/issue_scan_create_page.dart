@@ -8,6 +8,8 @@ import '../../../controllers/store_item_issue_controller.dart';
 import '../../../controllers/store_items_controller.dart';
 import '../../../domains/models/store_items_model.dart';
 import '../cart/store_cart_page.dart';
+import 'package:store_app/src/store_page/controllers/indent_draft_controller.dart';
+import 'package:store_app/src/store_page/domains/models/issue_models.dart';
 
 /* ---------------- Design Tokens ---------------- */
 const _ink900 = Color(0xFF282321);
@@ -75,7 +77,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF2563EB),
+        backgroundColor: isError ? Colors.red.shade700 : _ink900,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
@@ -88,29 +90,15 @@ class _ItemPageState extends ConsumerState<ItemPage> {
       _showSnackBar('Quantity must be greater than 0', isError: true);
       return;
     }
-    if (item.stockAvailableQuantity > 0 && qty > item.stockAvailableQuantity) {
-      _showSnackBar(
-        'Quantity cannot exceed available stock (${item.stockAvailableQuantity} ${item.unit})',
-        isError: true,
-      );
-      return;
-    }
 
     final existingIndex = _lines.indexWhere((l) => l["id"] == item.id);
     if (existingIndex != -1) {
       final currentRequested = _lines[existingIndex]["requestedQty"] as int;
       final newTotal = currentRequested + qty;
-      if (item.stockAvailableQuantity > 0 && newTotal > item.stockAvailableQuantity) {
-        _showSnackBar(
-          'Total requested ($newTotal) exceeds available stock (${item.stockAvailableQuantity})',
-          isError: true,
-        );
-        return;
-      }
       setState(() {
         _lines[existingIndex]["requestedQty"] = newTotal;
       });
-      _showSnackBar('Updated quantity for ${item.itemName}');
+      _showSnackBar('Updated quantity for ${item.itemName} ($newTotal ${item.unit})');
     } else {
       setState(() {
         _lines.add({
@@ -123,6 +111,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
           "unit": item.unit.isEmpty ? 'PCS' : item.unit,
           "requestedQty": qty,
           "stockAvailableQuantity": item.stockAvailableQuantity,
+          "imageUrl": item.imageUrl,
         });
       });
       _showSnackBar('Added ${item.itemName} to issue request');
@@ -146,7 +135,14 @@ class _ItemPageState extends ConsumerState<ItemPage> {
       onStockError: (err) => _showSnackBar(err, isError: true),
     );
     if (ok) {
-      _showSnackBar('Added ${item.itemName} ($qty ${item.unit}) to Requisition Cart!');
+      final avail = item.stockAvailableQuantity <= 0
+          ? 0
+          : (qty <= item.stockAvailableQuantity ? qty : item.stockAvailableQuantity);
+      final shortfall = (qty - avail).clamp(0, qty);
+      final msg = shortfall > 0
+          ? 'Added ${item.itemName} to Cart ($avail Issue + $shortfall Indent)!'
+          : 'Added ${item.itemName} ($qty ${item.unit}) to Requisition Cart!';
+      _showSnackBar(msg);
     }
   }
 
@@ -202,29 +198,88 @@ class _ItemPageState extends ConsumerState<ItemPage> {
       return;
     }
 
+    final reason = _reasonCtrl.text.trim();
+    final remark = _remarkCtrl.text.trim().isEmpty ? reason : _remarkCtrl.text.trim();
+
+    // Split lines into available stock (Issue Request) and shortage (Indent Draft)
+    final issueLines = <Map<String, dynamic>>[];
+    final indentDraftLines = <Map<String, dynamic>>[];
+
+    for (final l in _lines) {
+      final reqQty = l["requestedQty"] as int;
+      final stockAvail = (l["stockAvailableQuantity"] as int?) ?? 0;
+      final availForIssue = stockAvail <= 0 ? 0 : (reqQty <= stockAvail ? reqQty : stockAvail);
+      final shortfallForIndent = (reqQty - availForIssue).clamp(0, reqQty);
+
+      if (availForIssue > 0) {
+        issueLines.add({
+          'itemId': l["id"],
+          'requestedQty': availForIssue,
+        });
+      }
+
+      if (shortfallForIndent > 0) {
+        indentDraftLines.add({
+          'itemId': l["id"],
+          'quantity': shortfallForIndent,
+          'reason': reason,
+          'itemName': l["itemName"],
+          'itemCode': l["itemCode"] ?? '',
+          'unit': l["unit"] ?? 'PCS',
+          'imageUrl': l["imageUrl"] ?? '',
+        });
+      }
+    }
+
     setState(() => _busy = true);
     try {
-      final dto = <String, dynamic>{
-        'createdBy': uid.trim(),
-        'reason': _reasonCtrl.text.trim(),
-        'remark': _remarkCtrl.text.trim().isEmpty ? _reasonCtrl.text.trim() : _remarkCtrl.text.trim(),
-        'lines': _lines
-            .map(
-              (l) => {
-                'itemId': l["id"],
-                'requestedQty': l["requestedQty"],
-              },
-            )
-            .toList(),
-      };
+      IssueDraftResult? issueResult;
 
-      final ctrl = ref.read(issueControllerProvider);
-      await ctrl.createDraft(dto);
+      // 1. Process available stock as an Issue Request
+      if (issueLines.isNotEmpty) {
+        final dto = <String, dynamic>{
+          'createdBy': uid.trim(),
+          'reason': reason,
+          'remark': remark,
+          'lines': issueLines,
+        };
+        final ctrl = ref.read(issueControllerProvider);
+        issueResult = await ctrl.createDraft(dto);
+        if (issueResult == null && indentDraftLines.isEmpty) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+      }
+
+      // 2. Automatically save remaining units as Indent Requirement and submit as pending Indent
+      String? indentNo;
+      if (indentDraftLines.isNotEmpty) {
+        await ref
+            .read(indentDraftControllerProvider.notifier)
+            .addDraftItems(indentDraftLines);
+        final combinedRes = await ref
+            .read(indentDraftControllerProvider.notifier)
+            .submitCombined(reason: reason);
+        if (combinedRes != null) {
+          indentNo = combinedRes['groupIndentNumber']?.toString();
+        }
+      }
 
       if (!mounted) return;
       await ref.read(storeCartProvider.notifier).clearCart();
       ref.read(globalInCartProvider.notifier).refresh();
-      _showSnackBar('Issue request created successfully!');
+
+      if (issueLines.isNotEmpty && indentDraftLines.isNotEmpty) {
+        _showSnackBar(
+          'Issue Request ${issueResult?.issNo ?? ''} created! Indent Request ${indentNo != null ? '($indentNo) ' : ''}submitted for shortage units.',
+        );
+      } else if (issueLines.isNotEmpty) {
+        _showSnackBar('Issue Request ${issueResult?.issNo ?? ''} created successfully!');
+      } else {
+        _showSnackBar(
+          'Items out of stock: Indent Request ${indentNo != null ? '($indentNo) ' : ''}submitted for approval!',
+        );
+      }
 
       // Auto-direct to the item page
       ref.read(guidedTourControllerProvider).requestSection('items');
@@ -254,7 +309,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
         dialogBackgroundColor: _surface,
         colorScheme: Theme.of(context).colorScheme.copyWith(
           surface: _surface,
-          primary: const Color(0xFF2563EB),
+          primary: _ink900,
         ),
       ),
       child: Scaffold(
@@ -339,7 +394,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
-                              cursorColor: const Color(0xFF2563EB),
+                              cursorColor: _ink900,
                               decoration: InputDecoration(
                                 labelText: 'Reason for Issue *',
                                 labelStyle: const TextStyle(
@@ -351,7 +406,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                   color: _ink600.withValues(alpha: 0.55),
                                   fontSize: 13,
                                 ),
-                                prefixIcon: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB)),
+                                prefixIcon: const Icon(Icons.edit_note_rounded, color: _ink900),
                                 filled: true,
                                 fillColor: _surface,
                                 contentPadding: const EdgeInsets.symmetric(
@@ -364,7 +419,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                                  borderSide: const BorderSide(color: _ink900, width: 1.5),
                                 ),
                               ),
                             ),
@@ -376,7 +431,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
-                              cursorColor: const Color(0xFF2563EB),
+                              cursorColor: _ink900,
                               decoration: InputDecoration(
                                 labelText: 'Remark (Optional)',
                                 labelStyle: const TextStyle(
@@ -401,7 +456,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                                  borderSide: const BorderSide(color: _ink900, width: 1.5),
                                 ),
                               ),
                             ),
@@ -436,7 +491,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                       height: 24,
                                       child: Checkbox(
                                         value: _isCategoryChecked,
-                                        activeColor: const Color(0xFF2563EB),
+                                        activeColor: _ink900,
                                         checkColor: Colors.white,
                                         side: const BorderSide(color: _stroke, width: 1.5),
                                         shape: RoundedRectangleBorder(
@@ -518,7 +573,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                       ),
-                                      iconEnabledColor: const Color(0xFF2563EB),
+                                      iconEnabledColor: _ink900,
                                       hint: const Text(
                                         'Select an item / spare part',
                                         style: TextStyle(color: _ink600, fontWeight: FontWeight.w600),
@@ -605,7 +660,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                             controller: _qtyCtrl,
                                             textAlign: TextAlign.center,
                                             keyboardType: TextInputType.number,
-                                            cursorColor: const Color(0xFF2563EB),
+                                            cursorColor: _ink900,
                                             style: const TextStyle(
                                               color: _ink900,
                                               fontWeight: FontWeight.w900,
@@ -621,17 +676,12 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                           ),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.add_rounded, size: 18, color: _ink900),
-                                          onPressed: () {
-                                            final curr = int.tryParse(_qtyCtrl.text.trim()) ?? 1;
-                                            final max = _selectedItem!.stockAvailableQuantity;
-                                            if (max <= 0 || curr < max) {
+                                            icon: const Icon(Icons.add_rounded, size: 18, color: _ink900),
+                                            onPressed: () {
+                                              final curr = int.tryParse(_qtyCtrl.text.trim()) ?? 1;
                                               setState(() => _qtyCtrl.text = (curr + 1).toString());
-                                            } else {
-                                              _showSnackBar('Cannot exceed available stock ($max)');
-                                            }
-                                          },
-                                        ),
+                                            },
+                                          ),
                                       ],
                                     ),
                                   );
@@ -668,13 +718,13 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                         final qty = int.tryParse(_qtyCtrl.text.trim()) ?? 0;
                                         _addItemToTable(_selectedItem!, qty);
                                       },
-                                      icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
+                                      icon: const Icon(Icons.add_circle_outline_rounded, size: 16, color: Colors.white),
                                       label: const FittedBox(
                                         fit: BoxFit.scaleDown,
                                         child: Text('Add Part'),
                                       ),
                                       style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(0xFF2563EB),
+                                        backgroundColor: _ink900,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(14),
@@ -717,6 +767,45 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                                         ),
                                       ),
                                     ],
+                                  );
+                                },
+                              ),
+                              ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _qtyCtrl,
+                                builder: (context, val, _) {
+                                  final reqQty = int.tryParse(val.text.trim()) ?? 1;
+                                  final stockAvail = _selectedItem!.stockAvailableQuantity;
+                                  final availForIssue = stockAvail <= 0 ? 0 : (reqQty <= stockAvail ? reqQty : stockAvail);
+                                  final shortfall = (reqQty - availForIssue).clamp(0, reqQty);
+
+                                  if (shortfall <= 0) return const SizedBox.shrink();
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(top: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFFDE68A)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF92400E)),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            availForIssue > 0
+                                                ? '$availForIssue for Issue Request • $shortfall auto-routed to Indent Requirement'
+                                                : 'Out of stock: all $reqQty units will auto-route to Indent Requirement',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF92400E),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   );
                                 },
                               ),
@@ -935,9 +1024,9 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                     final submitBtn = ElevatedButton(
                       onPressed: _busy || _lines.isEmpty ? null : _submitCreate,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: _ink900,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                        disabledBackgroundColor: _ink900.withValues(alpha: 0.35),
                         disabledForegroundColor: Colors.white.withValues(alpha: 0.6),
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -954,7 +1043,7 @@ class _ItemPageState extends ConsumerState<ItemPage> {
                           : const FittedBox(
                               fit: BoxFit.scaleDown,
                               child: Text(
-                                'Submit Now',
+                                'Submit Request',
                                 style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
                               ),
                             ),

@@ -2376,32 +2376,6 @@ class _StoreSearchBarState extends State<_StoreSearchBar> {
                   ),
                 ),
               ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 3.5,
-                ),
-                decoration: BoxDecoration(
-                  color: _surfaceAlt.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: _stroke.withValues(alpha: 0.8),
-                  ),
-                ),
-                child: const Text(
-                  'SEARCH',
-                  style: TextStyle(
-                    color: _ink600,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-              ),
             ),
         ],
       ),
